@@ -1,0 +1,81 @@
+dataset_name: movielens32m
+domain: media_and_entertainment
+business_model: content_platform
+version: "32m"
+source_url: "https://grouplens.org/datasets/movielens/latest/"
+description: >
+  MovieLens 32M dataset from GroupLens Research. Contains 32 million ratings
+  across 87K movies by approximately 480K users. Ratings are explicit (0.5-5.0
+  stars) with timestamps. Includes movie genres but no provider metadata
+  (no studio, director, or distributor information).
+
+# Download source
+source:
+  url: "https://files.grouplens.org/datasets/movielens/ml-32m.zip"
+  archive: zip
+  checksum: null
+  inner_paths:
+    interactions: "ml-32m/ratings.csv"
+    items: "ml-32m/movies.csv"
+
+stakeholder_roles:
+  consumer: true       # User identifiers and ratings present
+  system: false        # No price or economic data
+  # NOTE: No provider fields available in MovieLens.
+  # There is no studio, director, or distributor metadata.
+  # This is a known limitation — provider-side evaluation is not possible.
+  provider: false
+  upstream: false
+  downstream: false
+  third_party: false
+
+files:
+  interactions:
+    filename: "ratings.csv"
+    format: csv
+    encoding: utf-8
+    separator: ","
+  items:
+    filename: "movies.csv"
+    format: csv
+    encoding: utf-8
+    separator: ","
+  # Optional: tags file provides additional user-item signals
+  tags:
+    filename: "tags.csv"
+    format: csv
+    encoding: utf-8
+    separator: ","
+  users: null           # No separate user file
+
+# Column role mapping
+schema:
+  user_identifier: ["userId", "user_id", "userid"]
+  item_identifier: ["movieId", "movie_id", "movieid"]
+  timestamp: ["timestamp"]
+  rating: ["rating"]
+
+# Feature type declarations
+item_features:
+  text: ["title"]
+  token_seq: ["genres"]       # Pipe-separated: "Action|Comedy|Drama"
+  token: []
+  float: []
+  drop: []
+
+interaction_features:
+  float: ["rating"]
+  token: []
+  token_seq: []
+  text: []
+  drop: []
+
+# Tags file features (if loaded as supplementary data)
+tags_features:
+  text: ["tag"]
+  token: []
+  float: []
+  token_seq: []
+  drop: []
+
+user_features: null

@@ -1,0 +1,7 @@
+pandas>=2.0
+pyarrow
+pyyaml
+numpy
+flask
+tqdm
+requests

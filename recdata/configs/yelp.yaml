@@ -1,0 +1,76 @@
+dataset_name: yelp
+domain: local_services
+business_model: review_platform
+version: "academic"
+source_url: "https://www.yelp.com/dataset"
+description: >
+  Yelp Academic Dataset. Contains millions of reviews, business metadata,
+  and user profiles for local businesses. Notable for its social network
+  (user friend lists) and rich location-based metadata (city, state,
+  coordinates). Supports consumer, provider, and limited downstream
+  (social) evaluation perspectives.
+
+# Download source
+source:
+  url: null  # Must be downloaded from yelp.com/dataset (requires agreement)
+  archive: tar
+  checksum: null
+  inner_paths:
+    interactions: "yelp_academic_dataset_review.json"
+    items: "yelp_academic_dataset_business.json"
+    users: "yelp_academic_dataset_user.json"
+
+stakeholder_roles:
+  consumer: true       # User identifiers, ratings, and review text present
+  system: false        # No explicit price/economic data
+  provider: true       # Business name, categories, and attributes present
+  upstream: false
+  downstream: true     # Social graph (friends list) in user data
+  third_party: false
+
+files:
+  interactions:
+    filename: "yelp_academic_dataset_review.json"
+    format: jsonl
+    encoding: utf-8
+  items:
+    filename: "yelp_academic_dataset_business.json"
+    format: jsonl
+    encoding: utf-8
+  users:
+    filename: "yelp_academic_dataset_user.json"
+    format: jsonl
+    encoding: utf-8
+
+# Column role mapping
+schema:
+  user_identifier: ["user_id", "userid"]
+  item_identifier: ["business_id", "businessid"]
+  timestamp: ["date", "timestamp"]
+  rating: ["stars", "rating"]
+
+# Feature type declarations
+item_features:
+  token: ["name", "city", "state", "postal_code", "is_open"]
+  float: ["latitude", "longitude", "stars", "review_count"]
+  token_seq: ["categories"]   # Comma-separated: "Restaurants, Mexican, Bars"
+  text: ["name", "address"]
+  drop: []
+
+interaction_features:
+  float: ["stars", "useful", "funny", "cool"]
+  token: []
+  token_seq: []
+  text: ["text"]
+  drop: ["review_id"]
+
+user_features:
+  token: ["name"]
+  float: ["review_count", "useful", "funny", "cool", "average_stars",
+          "fans", "compliment_hot", "compliment_more", "compliment_profile",
+          "compliment_cute", "compliment_list", "compliment_note",
+          "compliment_plain", "compliment_cool", "compliment_funny",
+          "compliment_writer", "compliment_photos"]
+  token_seq: ["friends", "elite"]   # friends = comma-separated user IDs; elite = years
+  text: ["name"]
+  drop: ["yelping_since"]   # Could also be treated as timestamp
