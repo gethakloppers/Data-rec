@@ -9,11 +9,7 @@ description: >
   and pricing information, making it suitable for multi-stakeholder evaluation
   with consumer, provider, and system perspectives.
 
-# Download source (data from SASRec / UCSD datasets)
-source:
-  url: null  # Manual download required from source_url
-  archive: null
-  checksum: null
+
 
 stakeholder_roles:
   consumer: true       # User interaction logs (reviews, hours played)
@@ -23,15 +19,11 @@ stakeholder_roles:
   downstream: false
   third_party: false
 
+# Format and encoding are auto-detected from the filename.
+# These files use Python-repr dict JSONL (one dict per line, not valid JSON).
 files:
-  interactions:
-    filename: "steam_reviews.json"
-    format: jsonl
-    encoding: utf-8
-  items:
-    filename: "steam_games.json"
-    format: jsonl
-    encoding: utf-8
+  interactions: "steam_reviews.json"
+  items: "steam_games.json"
   users: null           # No separate user file
 
 # Column role mapping: first match wins (case-insensitive)

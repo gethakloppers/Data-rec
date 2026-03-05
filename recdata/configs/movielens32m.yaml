@@ -8,57 +8,38 @@ description: >
   across 87K movies by approximately 480K users. Ratings are explicit (0.5-5.0
   stars) with timestamps. Includes movie genres but no provider metadata
   (no studio, director, or distributor information).
-
-# Download source
-source:
-  url: "https://files.grouplens.org/datasets/movielens/ml-32m.zip"
-  archive: zip
-  checksum: null
-  inner_paths:
-    interactions: "ml-32m/ratings.csv"
-    items: "ml-32m/movies.csv"
+citation: |
+  F. Maxwell Harper and Joseph A. Konstan. The MovieLens Datasets: History
+  and Context. ACM Trans. Interact. Intell. Syst. 5(4), 2016.
 
 stakeholder_roles:
-  consumer: true       # User identifiers and ratings present
-  system: false        # No price or economic data
-  # NOTE: No provider fields available in MovieLens.
-  # There is no studio, director, or distributor metadata.
-  # This is a known limitation — provider-side evaluation is not possible.
+  consumer: true
+  system: false
+  # NOTE: No provider fields available in MovieLens — no studio, director, or
+  # distributor metadata. Provider-side evaluation is not possible.
   provider: false
   upstream: false
   downstream: false
   third_party: false
 
+# Format and separator are auto-detected (CSV with comma separator).
 files:
-  interactions:
-    filename: "ratings.csv"
-    format: csv
-    encoding: utf-8
-    separator: ","
-  items:
-    filename: "movies.csv"
-    format: csv
-    encoding: utf-8
-    separator: ","
-  # Optional: tags file provides additional user-item signals
-  tags:
-    filename: "tags.csv"
-    format: csv
-    encoding: utf-8
-    separator: ","
+  interactions: "ratings.csv"
+  items: "movies.csv"
   users: null           # No separate user file
+  # tags: "tags.csv"   # Supplementary file; load separately if needed
 
-# Column role mapping
+# Column role mapping: first match wins (case-insensitive)
 schema:
   user_identifier: ["userId", "user_id", "userid"]
   item_identifier: ["movieId", "movie_id", "movieid"]
   timestamp: ["timestamp"]
   rating: ["rating"]
 
-# Feature type declarations
+# Feature type declarations (for profiling metadata — NOT column renaming)
 item_features:
   text: ["title"]
-  token_seq: ["genres"]       # Pipe-separated: "Action|Comedy|Drama"
+  token_seq: ["genres"]   # Pipe-separated: "Action|Comedy|Drama"
   token: []
   float: []
   drop: []
@@ -68,14 +49,6 @@ interaction_features:
   token: []
   token_seq: []
   text: []
-  drop: []
-
-# Tags file features (if loaded as supplementary data)
-tags_features:
-  text: ["tag"]
-  token: []
-  float: []
-  token_seq: []
   drop: []
 
 user_features: null

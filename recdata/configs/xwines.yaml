@@ -10,11 +10,13 @@ description: >
   metadata, enabling provider-side evaluation. Published in Big Data
   and Cognitive Computing (2023).
 
-# Download source
-source:
-  url: null  # Download from GitHub releases or Kaggle
-  archive: null
-  checksum: null
+# Format is auto-detected as zip. The zip archives each contain a single CSV.
+files:
+  interactions: "XWines_Full_21M_ratings.zip"
+  items: "XWines_Full_100K_wines.zip"
+  users: null           # No separate user file (UserIDs in ratings only)
+
+
 
 stakeholder_roles:
   consumer: true       # User identifiers and explicit ratings present
@@ -24,18 +26,7 @@ stakeholder_roles:
   downstream: false
   third_party: false
 
-files:
-  interactions:
-    filename: "XWines_Full_21M_ratings.csv"
-    format: csv
-    encoding: utf-8
-    separator: ","
-  items:
-    filename: "XWines_Full_100K_wines.csv"
-    format: csv
-    encoding: utf-8
-    separator: ","
-  users: null           # No separate user file (UserIDs in ratings only)
+
 
 # Column role mapping
 schema:

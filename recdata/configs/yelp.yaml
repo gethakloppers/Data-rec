@@ -10,15 +10,16 @@ description: >
   coordinates). Supports consumer, provider, and limited downstream
   (social) evaluation perspectives.
 
-# Download source
-source:
-  url: null  # Must be downloaded from yelp.com/dataset (requires agreement)
-  archive: tar
-  checksum: null
-  inner_paths:
-    interactions: "yelp_academic_dataset_review.json"
-    items: "yelp_academic_dataset_business.json"
-    users: "yelp_academic_dataset_user.json"
+# Files must be extracted from the Yelp Academic Dataset tar archive
+# (requires agreement at yelp.com/dataset). Place the extracted .json files
+# in your data directory. Format is auto-detected as JSONL.
+files:
+  interactions: "yelp_academic_dataset_review.json"
+  items: "yelp_academic_dataset_business.json"
+  users: "yelp_academic_dataset_user.json"
+
+
+
 
 stakeholder_roles:
   consumer: true       # User identifiers, ratings, and review text present
@@ -28,19 +29,7 @@ stakeholder_roles:
   downstream: true     # Social graph (friends list) in user data
   third_party: false
 
-files:
-  interactions:
-    filename: "yelp_academic_dataset_review.json"
-    format: jsonl
-    encoding: utf-8
-  items:
-    filename: "yelp_academic_dataset_business.json"
-    format: jsonl
-    encoding: utf-8
-  users:
-    filename: "yelp_academic_dataset_user.json"
-    format: jsonl
-    encoding: utf-8
+
 
 # Column role mapping
 schema:
