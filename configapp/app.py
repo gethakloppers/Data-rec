@@ -64,6 +64,60 @@ def _file_size_mb(path: Path) -> float:
     return round(path.stat().st_size / (1024 * 1024), 1)
 
 
+def _list_archive_contents(filepath: Path, fmt: str) -> list[dict]:
+    """List data files inside a tar/zip archive with format and size.
+
+    Returns a list of dicts with keys: ``filename``, ``format``, ``size_mb``.
+    """
+    import tarfile as _tarfile
+    import zipfile as _zipfile
+
+    results: list[dict] = []
+
+    if fmt == "tar":
+        with _tarfile.open(filepath, "r:*") as tf:
+            for member in tf.getmembers():
+                if not member.isfile():
+                    continue
+                inner = Path(member.name)
+                # Skip hidden / macOS system files
+                if inner.name.startswith(".") or inner.name.startswith("__"):
+                    continue
+                if not _is_data_file(inner):
+                    continue
+                try:
+                    inner_fmt = detect_format(inner)
+                except DatasetLoadError:
+                    inner_fmt = "unknown"
+                results.append({
+                    "filename": inner.name,
+                    "format": inner_fmt,
+                    "size_mb": round(member.size / (1024 * 1024), 1),
+                })
+
+    elif fmt == "zip":
+        with _zipfile.ZipFile(filepath, "r") as zf:
+            for info in zf.infolist():
+                if info.is_dir():
+                    continue
+                inner = Path(info.filename)
+                if inner.name.startswith(".") or inner.name.startswith("__"):
+                    continue
+                if not _is_data_file(inner):
+                    continue
+                try:
+                    inner_fmt = detect_format(inner)
+                except DatasetLoadError:
+                    inner_fmt = "unknown"
+                results.append({
+                    "filename": inner.name,
+                    "format": inner_fmt,
+                    "size_mb": round(info.file_size / (1024 * 1024), 1),
+                })
+
+    return results
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Routes
 # ─────────────────────────────────────────────────────────────────────────────
@@ -108,6 +162,23 @@ def scan_folder():
                 fmt = detect_format(f)
             except DatasetLoadError:
                 fmt = "unknown"
+
+            # Expand tar/zip archives into individual inner files
+            if fmt in ("tar", "zip"):
+                try:
+                    inner_files = _list_archive_contents(f, fmt)
+                    if inner_files:
+                        for inner in inner_files:
+                            files.append({
+                                "filename": inner["filename"],
+                                "format": inner["format"],
+                                "size_mb": inner["size_mb"],
+                                "archive": f.name,
+                            })
+                        continue  # skip appending the archive itself
+                except Exception:
+                    logger.warning("Failed to list contents of '%s', showing as archive", f.name)
+
             files.append({
                 "filename": f.name,
                 "format": fmt,
@@ -139,19 +210,28 @@ def preview_file():
     data = request.get_json(silent=True) or {}
     folder_path = data.get("folder_path", "").strip()
     filename = data.get("filename", "").strip()
+    archive = data.get("archive", "").strip()
 
     if not folder_path or not filename:
         return jsonify({"error": "folder_path and filename are required"}), 400
 
-    filepath = Path(folder_path) / filename
-    if not filepath.exists():
-        return jsonify({"error": f"File not found: {filepath}"}), 404
-
-    # Read a sample (500 rows to have enough for heuristics after dropna)
-    try:
-        df = read_file(filepath, nrows=500)
-    except Exception as exc:
-        return jsonify({"error": f"Failed to read file: {exc}"}), 500
+    if archive:
+        # File lives inside a tar/zip archive
+        filepath = Path(folder_path) / archive
+        if not filepath.exists():
+            return jsonify({"error": f"Archive not found: {filepath}"}), 404
+        try:
+            df = read_file(filepath, nrows=500, inner_filename=filename)
+        except Exception as exc:
+            return jsonify({"error": f"Failed to read file: {exc}"}), 500
+    else:
+        filepath = Path(folder_path) / filename
+        if not filepath.exists():
+            return jsonify({"error": f"File not found: {filepath}"}), 404
+        try:
+            df = read_file(filepath, nrows=500)
+        except Exception as exc:
+            return jsonify({"error": f"Failed to read file: {exc}"}), 500
 
     # Normalise column names: lowercase, spaces → underscores
     df.columns = [c.lower().replace(" ", "_") for c in df.columns]
@@ -424,6 +504,13 @@ _TAXONOMY_CATS: dict[str, list[str]] = {
         "user_id", "demographics", "downstream_stakeholder_info",
         "additional_attributes", "other",
     ],
+    # "other" files can use any category — superset of all roles
+    "other": [
+        "user_id", "item_id", "descriptive_features", "content_features",
+        "provider_upstream_info", "demographics", "downstream_stakeholder_info",
+        "additional_attributes", "explicit_feedback", "implicit_feedback",
+        "timestamp", "session_data", "interaction_context", "other",
+    ],
 }
 
 # Entity stakeholders have an id_column; signal stakeholders do not
@@ -536,30 +623,38 @@ def _build_yaml_config(data: dict) -> str:
     config["stakeholder_roles"] = roles
 
     # ── Files ─────────────────────────────────────────────────────────────
-    role_files: dict[str, list[str]] = {}
+    role_files: dict[str, list[dict]] = {}
     for f in files_list:
         role = f.get("role", "")
         fname = f.get("filename", "")
+        archive = f.get("archive", "")
         if role and fname:
-            role_files.setdefault(role, []).append(fname)
+            entry: dict[str, str] = {"filename": fname}
+            if archive:
+                entry["archive"] = archive
+            role_files.setdefault(role, []).append(entry)
 
     files_dict: OrderedDict = OrderedDict()
-    for role in ("interactions", "items", "users"):
-        fnames = role_files.get(role, [])
-        if len(fnames) == 0:
-            files_dict[role] = None
-        elif len(fnames) == 1:
-            files_dict[role] = fnames[0]
-        else:
-            files_dict[role] = fnames
+    for role in ("interactions", "items", "users", "other"):
+        entries = role_files.get(role, [])
+        if not entries:
+            if role != "other":
+                files_dict[role] = None
+            continue
 
-    # Include "other" files if present
-    other_fnames = role_files.get("other", [])
-    if other_fnames:
-        if len(other_fnames) == 1:
-            files_dict["other"] = other_fnames[0]
+        def _file_entry(e: dict):
+            """Convert a file entry to its YAML representation."""
+            if e.get("archive"):
+                d = OrderedDict()
+                d["filename"] = e["filename"]
+                d["archive"] = e["archive"]
+                return d
+            return e["filename"]
+
+        if len(entries) == 1:
+            files_dict[role] = _file_entry(entries[0])
         else:
-            files_dict["other"] = other_fnames
+            files_dict[role] = [_file_entry(e) for e in entries]
 
     config["files"] = files_dict
 
@@ -595,14 +690,14 @@ def _build_yaml_config(data: dict) -> str:
     config["schema"] = schema
 
     # ── Feature declarations ──────────────────────────────────────────────
-    # Only build feature sections for standard roles (items, interactions, users)
-    # "other" files are included in the files section but don't get feature declarations
-    for role in ("items", "interactions", "users"):
-        feature_key = {
-            "items": "item_features",
-            "interactions": "interaction_features",
-            "users": "user_features",
-        }[role]
+    _ROLE_FEATURE_KEY = {
+        "items": "item_features",
+        "interactions": "interaction_features",
+        "users": "user_features",
+        "other": "other_features",
+    }
+    for role in ("items", "interactions", "users", "other"):
+        feature_key = _ROLE_FEATURE_KEY[role]
 
         role_tabs = [
             tk for tk in column_configs if tk.startswith(role + "__")
@@ -639,7 +734,7 @@ def _build_yaml_config(data: dict) -> str:
     # Groups every column in every file by its taxonomy schema category.
     # Downstream profiling can use this to display columns by category.
     taxonomy: OrderedDict = OrderedDict()
-    for role in ("interactions", "items", "users"):
+    for role in ("interactions", "items", "users", "other"):
         role_tabs = [tk for tk in column_configs if tk.startswith(role + "__")]
         if not role_tabs:
             taxonomy[role] = None
@@ -683,7 +778,8 @@ def _build_yaml_config(data: dict) -> str:
     # Post-process: insert blank lines before major sections
     _section_keys = {
         "stakeholder_roles:", "files:", "schema:",
-        "item_features:", "interaction_features:", "user_features:", "taxonomy:",
+        "item_features:", "interaction_features:", "user_features:",
+        "other_features:", "taxonomy:",
     }
     lines = yaml_str.split("\n")
     result: list[str] = []

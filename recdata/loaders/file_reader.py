@@ -117,6 +117,11 @@ def detect_encoding(filepath: str | Path) -> str:
             if result and result.get("encoding"):
                 enc = result["encoding"]
                 confidence = result.get("confidence", 0)
+                # ASCII is a subset of UTF-8.  Upgrade to UTF-8 so that
+                # any non-ASCII bytes beyond the 64 KB sample are decoded
+                # correctly instead of raising UnicodeDecodeError.
+                if enc.lower() in ("ascii", "us-ascii"):
+                    enc = "utf-8"
                 logger.debug(
                     "Detected encoding for '%s': %s (confidence %.0f%%)",
                     path.name, enc, confidence * 100,
@@ -540,15 +545,15 @@ def _read_zip(
         with zf.open(target) as f:
             if suffix in (".csv", ".tsv"):
                 sep = "\t" if suffix == ".tsv" else separator
-                return pd.read_csv(f, encoding=encoding, sep=sep, low_memory=False)
+                return pd.read_csv(f, encoding=encoding, sep=sep, low_memory=False, **kwargs)
             elif suffix == ".json":
-                return pd.read_json(f, encoding=encoding)
+                return pd.read_json(f, encoding=encoding, **kwargs)
             elif suffix == ".parquet":
-                return pd.read_parquet(f, engine="pyarrow")
+                return pd.read_parquet(f, engine="pyarrow", **kwargs)
             else:
                 # Default to CSV
                 logger.warning("Unknown format '%s' in ZIP, trying as CSV", suffix)
-                return pd.read_csv(f, encoding=encoding, sep=separator, low_memory=False)
+                return pd.read_csv(f, encoding=encoding, sep=separator, low_memory=False, **kwargs)
 
 
 def _read_tar(
@@ -610,7 +615,7 @@ def _read_tar(
         with f:
             if suffix in (".csv", ".tsv"):
                 sep = "\t" if suffix == ".tsv" else separator
-                return pd.read_csv(f, encoding=encoding, sep=sep, low_memory=False)
+                return pd.read_csv(f, encoding=encoding, sep=sep, low_memory=False, **kwargs)
             elif suffix == ".json":
                 # For JSONL (newline-delimited), we need to write to temp file
                 # since _read_jsonl expects a file path
@@ -622,13 +627,13 @@ def _read_tar(
                 try:
                     # Try as JSON array first, fall back to JSONL
                     try:
-                        return pd.read_json(tmp_path, encoding=encoding)
+                        return pd.read_json(tmp_path, encoding=encoding, **kwargs)
                     except ValueError:
-                        return _read_jsonl(tmp_path, encoding=encoding)
+                        return _read_jsonl(tmp_path, encoding=encoding, **kwargs)
                 finally:
                     tmp_path.unlink(missing_ok=True)
             elif suffix == ".parquet":
-                return pd.read_parquet(f, engine="pyarrow")
+                return pd.read_parquet(f, engine="pyarrow", **kwargs)
             else:
                 logger.warning("Unknown format '%s' in TAR, trying as CSV", suffix)
-                return pd.read_csv(f, encoding=encoding, sep=separator, low_memory=False)
+                return pd.read_csv(f, encoding=encoding, sep=separator, low_memory=False, **kwargs)

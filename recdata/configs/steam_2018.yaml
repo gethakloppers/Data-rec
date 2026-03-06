@@ -7,12 +7,25 @@ citation: "@misc{Steam,\n      title={Self-Attentive Sequential Recommendation},
   \ \n}\n"
 
 stakeholder_roles:
-  consumer: true
-  provider: true
-  upstream: true
-  downstream: false
-  system: true
-  third_party: false
+  consumer:
+    supported: true
+    id: [user_id]
+    features: []
+  provider:
+    supported: true
+    id: []
+    features: [publisher]
+  upstream:
+    supported: true
+    id: []
+    features: [developer]
+  downstream:
+    supported: false
+  system:
+    supported: true
+    features: [price, discount_price]
+  third_party:
+    supported: false
 
 files:
   interactions: steam_reviews.json
@@ -26,17 +39,37 @@ schema:
   rating: []
 
 item_features:
-  token: [publisher, release_date, early_access, developer, sentiment]
+  token: [publisher, release_date, early_access, sentiment]
   float: [discount_price, price]
   token_seq: [genres, tags, specs]
-  text: [app_name, title, url, reviews_url]
+  text: [app_name, title, url, reviews_url, developer]
+  misc: []
   drop: [metascore]
 
 interaction_features:
-  token: [page_order, early_access, page, compensation]
+  token: [page_order, early_access, page]
   float: [hours, products, found_funny]
   token_seq: []
   text: [text]
+  misc: [compensation]
   drop: [username]
 
 user_features: null
+
+taxonomy:
+  interactions:
+    user_id: [user_id]
+    item_id: [product_id]
+    explicit_feedback: [text]
+    implicit_feedback: []
+    timestamp: [date]
+    session_data: []
+    interaction_context: [hours, products, page_order, early_access, page, found_funny, compensation]
+    other: [username]
+  items:
+    item_id: [id]
+    descriptive_features: [genres, release_date, tags, discount_price, specs, price, early_access, sentiment]
+    content_features: [app_name, title]
+    provider_upstream_info: [publisher, developer]
+    other: [url, reviews_url, metascore]
+  users: null

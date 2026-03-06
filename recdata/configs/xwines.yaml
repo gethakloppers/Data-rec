@@ -1,53 +1,81 @@
 dataset_name: xwines
-domain: food_and_beverage
-business_model: review_platform
-version: "full"
-source_url: "https://github.com/rogerioxavier/X-Wines"
-description: >
-  X-Wines dataset for wine recommender systems and machine learning.
-  Contains 21M ratings from over 1M users across 100K wines spanning
-  62 countries and 2,160 producing regions. Includes winery and region
-  metadata, enabling provider-side evaluation. Published in Big Data
-  and Cognitive Computing (2023).
-
-# Format is auto-detected as zip. The zip archives each contain a single CSV.
-files:
-  interactions: "XWines_Full_21M_ratings.zip"
-  items: "XWines_Full_100K_wines.zip"
-  users: null           # No separate user file (UserIDs in ratings only)
-
-
+domain: ecommerce_and_retail
+source_url: https://github.com/rogerioxavier/X-Wines
+citation: |
+  @Article{xwines,
+  AUTHOR = {de Azambuja, Rogério Xavier and Morais, A. Jorge and Filipe, Vítor},
+  TITLE = {X-Wines: A Wine Dataset for Recommender Systems and Machine Learning},
+  JOURNAL = {Big Data and Cognitive Computing},
+  VOLUME = {7},
+  YEAR = {2023},
+  NUMBER = {1},
+  ARTICLE-NUMBER = {20},
+  URL = {https://www.mdpi.com/2504-2289/7/1/20},
+  DOI = {10.3390/bdcc7010020}
+  }
 
 stakeholder_roles:
-  consumer: true       # User identifiers and explicit ratings present
-  system: false        # No price or economic data in the public release
-  provider: true       # WineryID, WineryName, RegionID present
-  upstream: false
-  downstream: false
-  third_party: false
+  consumer:
+    supported: true
+    id: [userid]
+    features: []
+  provider:
+    supported: true
+    id: [wineryid]
+    features: [wineryname]
+  upstream:
+    supported: false
+  downstream:
+    supported: false
+  system:
+    supported: true
+    features: [regionid, code]
+  third_party:
+    supported: false
 
+files:
+  interactions: XWines_Full_21M_ratings.zip
+  items: XWines_Full_100K_wines.zip
+  users: null
 
-
-# Column role mapping
 schema:
-  user_identifier: ["UserID", "user_id", "userid"]
-  item_identifier: ["WineID", "wine_id", "wineid"]
-  timestamp: ["Date", "date", "timestamp"]
-  rating: ["Rating", "rating"]
+  user_identifier: [userid]
+  item_identifier: [wineid]
+  timestamp: [date]
+  rating: [rating]
 
-# Feature type declarations
 item_features:
-  token: ["Type", "Elaborate", "RegionID", "WineryID"]
-  float: []
-  token_seq: ["Grapes"]     # May contain multiple grape varieties
-  text: ["WineName", "WineryName", "RegionName", "Country"]
-  drop: ["Website"]
+  token: [type, elaborate, body, acidity, code, regionid, wineryid]
+  float: [abv]
+  token_seq: [harmonize, vintages]
+  text: [winename, country, regionname, wineryname, website]
+  misc: [grapes]
+  drop: []
 
 interaction_features:
-  float: ["Rating"]
-  token: ["Vintage"]        # Vintage year or "N.V."
+  token: [vintage]
+  float: [rating]
   token_seq: []
   text: []
-  drop: ["RatingID"]
+  misc: []
+  drop: [ratingid]
 
 user_features: null
+
+taxonomy:
+  interactions:
+    user_id: [userid]
+    item_id: [wineid]
+    explicit_feedback: [rating]
+    implicit_feedback: []
+    timestamp: [date]
+    session_data: []
+    interaction_context: [vintage]
+    other: [ratingid]
+  items:
+    item_id: [wineid]
+    descriptive_features: [type, elaborate, grapes, harmonize, abv, body, acidity, code, regionid, vintages]
+    content_features: [winename, country, regionname, wineryname]
+    provider_upstream_info: [wineryid]
+    other: [website]
+  users: null

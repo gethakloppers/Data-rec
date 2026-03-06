@@ -85,7 +85,12 @@
           <tbody>
             <template x-for="(file, idx) in files" :key="file.filename">
               <tr>
-                <td class="mono" x-text="file.filename"></td>
+                <td>
+                  <span class="mono" x-text="file.filename"></span>
+                  <template x-if="file.archive">
+                    <span class="badge badge-archive" x-text="'in ' + file.archive"></span>
+                  </template>
+                </td>
                 <td><span class="badge" x-text="file.format"></span></td>
                 <td x-text="file.size_mb + ' MB'"></td>
                 <td>
@@ -208,7 +213,7 @@
                   </td>
                   <td>
                     <select class="schema-select"
-                            x-effect="$el.value = getColumnConfig(col).schema || ''"
+                            x-effect="{ step; const v = getColumnConfig(col).schema || ''; $nextTick(() => $el.value = v) }"
                             @change="setSchemaForColumn(col, $event.target.value)">
                       <option value="">— Unassigned —</option>
                       <template x-for="cat in taxonomyCategoriesFor(activeTab)" :key="cat.key">

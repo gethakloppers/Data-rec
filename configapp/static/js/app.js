@@ -223,10 +223,15 @@ function configApp(defaultPath, outputPath) {
 
       this.previewLoading = true;
       try {
+        // Check if this file lives inside an archive
+        const fileEntry = this.files.find((f) => f.filename === filename);
+        const body = { folder_path: this.folderPath, filename };
+        if (fileEntry && fileEntry.archive) body.archive = fileEntry.archive;
+
         const res = await fetch("/api/preview-file", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ folder_path: this.folderPath, filename }),
+          body: JSON.stringify(body),
         });
         const data = await res.json();
         if (!res.ok) { this.previewError = data.error || "Preview failed"; return; }
@@ -344,12 +349,18 @@ function configApp(defaultPath, outputPath) {
     taxonomyCategoriesFor(tabKey) {
       const role = (tabKey || this.activeTab).split("__")[0];
       if (role === "other") {
-        // Generic categories for supplementary files (no required fields)
-        return [
-          { key: "descriptive_features", label: "Descriptive Features", desc: "Structured metadata", singleton: false, required: false },
-          { key: "content_features", label: "Content Features", desc: "Unstructured content", singleton: false, required: false },
-          { key: "other", label: "Other", desc: "Does not fit any category", singleton: false, required: false },
-        ];
+        // All taxonomy categories available for supplementary files (no required fields)
+        const seen = new Set();
+        const cats = [];
+        for (const tax of Object.values(TAXONOMY)) {
+          for (const cat of tax.categories) {
+            if (!seen.has(cat.key)) {
+              seen.add(cat.key);
+              cats.push({ ...cat, required: false, singleton: false });
+            }
+          }
+        }
+        return cats;
       }
       return TAXONOMY[role]?.categories || [];
     },
@@ -385,6 +396,8 @@ function configApp(defaultPath, outputPath) {
       for (const af of this.assignedFiles) {
         const configs = this.columnConfigs[af.tabKey];
         if (!configs) return false;
+        // "other" files have no required fields — skip validation
+        if (af.role === "other") continue;
         const tax = TAXONOMY[af.role];
         if (!tax) continue;
         for (const cat of tax.categories) {
@@ -659,10 +672,12 @@ function configApp(defaultPath, outputPath) {
     _buildExportPayload() {
       return {
         metadata: { ...this.metadata },
-        files: this.assignedFiles.map((af) => ({
-          role: af.role,
-          filename: af.filename,
-        })),
+        files: this.assignedFiles.map((af) => {
+          const entry = { role: af.role, filename: af.filename };
+          const fileObj = this.files.find((f) => f.filename === af.filename);
+          if (fileObj && fileObj.archive) entry.archive = fileObj.archive;
+          return entry;
+        }),
         columnConfigs: JSON.parse(JSON.stringify(this.columnConfigs)),
         stakeholderConfig: JSON.parse(JSON.stringify(this.stakeholderConfig)),
       };

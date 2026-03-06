@@ -278,6 +278,14 @@ h3 {
   font-weight: 500;
 }
 
+.badge-archive {
+  background: var(--purple-light);
+  color: var(--purple);
+  font-family: var(--font-sans);
+  font-size: 0.7rem;
+  margin-left: 0.35rem;
+}
+
 
 /* ─── Selects ─── */
 
