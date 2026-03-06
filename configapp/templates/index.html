@@ -1,0 +1,404 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>RecData Config</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+  <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+</head>
+<body>
+
+<header>
+  <h1>RecData <span class="light">Config</span></h1>
+  <p class="subtitle">Dataset configuration tool</p>
+</header>
+
+<main x-data="configApp('{{ default_path }}')" x-cloak>
+
+  <!-- Step indicator -->
+  <nav class="steps">
+    <button class="step" :class="{ active: step === 1, done: step > 1 }" @click="step >= 1 && (step = 1)">
+      <span class="step-num">1</span> Files
+    </button>
+    <span class="step-arrow">&rarr;</span>
+    <button class="step" :class="{ active: step === 2, done: step > 2 }" @click="step >= 2 && (step = 2)" :disabled="step < 2">
+      <span class="step-num">2</span> Columns
+    </button>
+    <span class="step-arrow">&rarr;</span>
+    <button class="step" :class="{ active: step === 3, done: step > 3 }" @click="step >= 3 && (step = 3)" :disabled="step < 3">
+      <span class="step-num">3</span> Stakeholders
+    </button>
+    <span class="step-arrow">&rarr;</span>
+    <button class="step" :class="{ active: step === 4, done: step > 4 }" @click="step >= 4 && (step = 4)" :disabled="step < 4">
+      <span class="step-num">4</span> Metadata
+    </button>
+    <span class="step-arrow">&rarr;</span>
+    <button class="step" :class="{ active: step === 5, done: step > 5 }" @click="step >= 5 && (step = 5)" :disabled="step < 5">
+      <span class="step-num">5</span> Export
+    </button>
+  </nav>
+
+  <!-- ─── Step 1: Folder & File Assignment ─── -->
+  <section x-show="step === 1" x-transition>
+    <h2>Select data folder</h2>
+
+    <div class="input-row">
+      <input type="text" x-model="folderPath" placeholder="/path/to/dataset/folder"
+             class="folder-input" @keydown.enter="scanFolder()">
+      <button @click="scanFolder()" :disabled="scanning || !folderPath.trim()" class="btn primary">
+        <span x-show="!scanning">Scan</span>
+        <span x-show="scanning">Scanning&hellip;</span>
+      </button>
+    </div>
+
+    <p x-show="scanError" class="error" x-text="scanError"></p>
+
+    <template x-if="files.length > 0">
+      <div>
+        <h3>Detected files</h3>
+        <table class="file-table">
+          <thead>
+            <tr>
+              <th>File</th>
+              <th>Format</th>
+              <th>Size</th>
+              <th>Role</th>
+            </tr>
+          </thead>
+          <tbody>
+            <template x-for="(file, idx) in files" :key="file.filename">
+              <tr>
+                <td class="mono" x-text="file.filename"></td>
+                <td><span class="badge" x-text="file.format"></span></td>
+                <td x-text="file.size_mb + ' MB'"></td>
+                <td>
+                  <select x-model="file.role" class="role-select">
+                    <option value="">— Select —</option>
+                    <option value="interactions">Interactions</option>
+                    <option value="items">Items</option>
+                    <option value="users">Users</option>
+                    <option value="skip">Skip</option>
+                  </select>
+                </td>
+              </tr>
+            </template>
+          </tbody>
+        </table>
+
+        <div class="step-actions">
+          <button @click="goToStep2()" :disabled="!hasInteractions" class="btn primary">
+            Next &rarr;
+          </button>
+          <p x-show="!hasInteractions" class="hint">Assign at least one file as Interactions to continue.</p>
+        </div>
+      </div>
+    </template>
+  </section>
+
+  <!-- ─── Step 2: Column + Schema Configuration (merged) ─── -->
+  <section x-show="step === 2" x-transition>
+    <h2>Configure columns &amp; schema</h2>
+
+    <!-- File tabs -->
+    <div class="tab-bar">
+      <template x-for="af in assignedFiles" :key="af.tabKey">
+        <button class="tab" :class="{ active: activeTab === af.tabKey }"
+                @click="switchTab(af.tabKey)" x-text="tabLabel(af)">
+        </button>
+      </template>
+    </div>
+
+    <p x-show="previewLoading" class="hint">Loading preview&hellip;</p>
+    <p x-show="previewError" class="error" x-text="previewError"></p>
+
+    <template x-if="currentPreview && !previewLoading">
+      <div>
+        <!-- Validation bar: required schema fields -->
+        <div class="validation-bar">
+          <template x-for="v in getSchemaValidation(activeTab)" :key="v.key">
+            <span class="validation-item" :class="v.assigned ? 'valid' : 'invalid'">
+              <span x-text="v.assigned ? '✓' : '✗'"></span>
+              <strong x-text="v.label + ':'"></strong>
+              <span x-text="v.assigned ? v.column : 'not assigned'"></span>
+            </span>
+          </template>
+        </div>
+
+        <p class="hint">
+          Showing <span x-text="currentPreview.n_rows"></span> sample rows from
+          <strong x-text="activeFilename"></strong>
+        </p>
+
+        <div class="table-scroll">
+          <table class="column-table schema-table">
+            <thead>
+              <tr>
+                <th>Column</th>
+                <th>Samples</th>
+                <th>Type</th>
+                <th>Separator</th>
+                <th>Schema</th>
+              </tr>
+            </thead>
+            <tbody>
+              <template x-for="col in currentPreview.columns" :key="activeTab + '-' + col">
+                <tr :class="rowClass(col)">
+                  <td class="mono" x-text="col"></td>
+                  <td class="samples">
+                    <template x-for="(sample, si) in getSamples(col)" :key="si">
+                      <span class="sample-group">
+                        <template x-if="sample.isList">
+                          <span class="sample-list">
+                            <template x-for="(part, pi) in sample.parts" :key="pi">
+                              <span class="sample-pill list-item" x-text="part"></span>
+                            </template>
+                            <template x-if="sample.parts.length >= 5">
+                              <span class="sample-pill list-item more">&hellip;</span>
+                            </template>
+                          </span>
+                        </template>
+                        <template x-if="!sample.isList">
+                          <span class="sample-pill" x-text="sample.display"></span>
+                        </template>
+                      </span>
+                    </template>
+                  </td>
+                  <td>
+                    <select x-model="getColumnConfig(col).type" class="type-select"
+                            @change="autoUpdateSchema(col)">
+                      <option value="">— Select —</option>
+                      <option value="float">Number</option>
+                      <option value="token">Categorical</option>
+                      <option value="token_seq">Categorical list</option>
+                      <option value="text">Free text</option>
+                      <option value="datetime">Datetime</option>
+                      <option value="boolean">Boolean</option>
+                      <option value="url">URL</option>
+                      <option value="misc">Misc</option>
+                      <option value="drop">Exclude</option>
+                    </select>
+                  </td>
+                  <td>
+                    <template x-if="getColumnConfig(col).type === 'token_seq'">
+                      <select x-model="getColumnConfig(col).separator" class="sep-select">
+                        <option value="|">|</option>
+                        <option value=",">,</option>
+                        <option value=";">;</option>
+                        <option value=" ">space</option>
+                      </select>
+                    </template>
+                  </td>
+                  <td>
+                    <select class="schema-select"
+                            x-effect="$el.value = getColumnConfig(col).schema || ''"
+                            @change="setSchemaForColumn(col, $event.target.value)">
+                      <option value="">— Unassigned —</option>
+                      <template x-for="cat in taxonomyCategoriesFor(activeTab)" :key="cat.key">
+                        <option :value="cat.key" x-text="cat.label"></option>
+                      </template>
+                    </select>
+                  </td>
+                </tr>
+              </template>
+            </tbody>
+          </table>
+        </div>
+
+
+        <div class="step-actions">
+          <button @click="step = 1" class="btn">&larr; Back</button>
+          <button @click="goToStep3()" :disabled="!schemaValid" class="btn primary">Next &rarr;</button>
+          <p x-show="!schemaValid" class="hint">Assign all required fields before continuing.</p>
+        </div>
+      </div>
+    </template>
+  </section>
+
+  <!-- ─── Step 3: Stakeholder Configuration ─── -->
+  <section x-show="step === 3" x-transition>
+    <h2>Configure stakeholders</h2>
+    <p class="hint">Define which stakeholder roles are supported by this dataset.</p>
+
+    <div class="stakeholder-grid">
+      <template x-for="sk in ['consumer', 'provider', 'upstream', 'downstream', 'system', 'third_party']" :key="sk">
+        <div class="stakeholder-card" :class="{ enabled: stakeholderConfig[sk].enabled, locked: sk === 'consumer' }">
+
+          <!-- Header with toggle -->
+          <div class="stakeholder-header">
+            <strong x-text="stakeholderLabel(sk)"></strong>
+            <template x-if="sk !== 'consumer'">
+              <label class="toggle">
+                <input type="checkbox" x-model="stakeholderConfig[sk].enabled">
+                <span class="toggle-slider"></span>
+              </label>
+            </template>
+            <template x-if="sk === 'consumer'">
+              <span class="badge badge-locked">Always on</span>
+            </template>
+          </div>
+
+          <!-- Body (shown when enabled) -->
+          <template x-if="stakeholderConfig[sk].enabled">
+            <div class="stakeholder-body">
+
+              <!-- Entity stakeholders: ID column + associated columns -->
+              <template x-if="isEntityStakeholder(sk)">
+                <div>
+                  <label class="field-label">
+                    ID column
+                    <template x-if="sk === 'consumer'"><span class="lock-icon">🔒</span></template>
+                  </label>
+                  <template x-if="sk === 'consumer'">
+                    <span class="mono" x-text="stakeholderConfig.consumer.id_column || '—'"></span>
+                  </template>
+                  <template x-if="sk !== 'consumer'">
+                    <select x-model="stakeholderConfig[sk].id_column" class="role-select">
+                      <option value="">— Select —</option>
+                      <template x-for="c in allAvailableColumns.filter(c => c.type === 'token' || c.type === 'token_seq')" :key="c.name">
+                        <option :value="c.name" x-text="c.name + ' (' + c.role + ')'"></option>
+                      </template>
+                    </select>
+                  </template>
+
+                  <label class="field-label" style="margin-top: 0.5rem;">Associated columns</label>
+                  <div class="chip-container">
+                    <template x-for="col in stakeholderConfig[sk].columns" :key="col">
+                      <span class="column-chip">
+                        <span x-text="col"></span>
+                        <template x-if="sk !== 'consumer'">
+                          <button class="chip-remove" @click="toggleStakeholderColumn(sk, col)">&times;</button>
+                        </template>
+                      </span>
+                    </template>
+                    <template x-if="sk !== 'consumer'">
+                      <select class="add-column-select" @change="if ($event.target.value) { toggleStakeholderColumn(sk, $event.target.value); $event.target.value = ''; }">
+                        <option value="">+ Add</option>
+                        <template x-for="c in allAvailableColumns.filter(c => !stakeholderConfig[sk].columns.includes(c.name))" :key="c.name">
+                          <option :value="c.name" x-text="c.name"></option>
+                        </template>
+                      </select>
+                    </template>
+                  </div>
+                </div>
+              </template>
+
+              <!-- Signal stakeholders: columns of interest -->
+              <template x-if="!isEntityStakeholder(sk)">
+                <div>
+                  <label class="field-label">Columns of interest</label>
+                  <div class="chip-container">
+                    <template x-for="col in stakeholderConfig[sk].columns" :key="col">
+                      <span class="column-chip">
+                        <span x-text="col"></span>
+                        <button class="chip-remove" @click="toggleStakeholderColumn(sk, col)">&times;</button>
+                      </span>
+                    </template>
+                    <select class="add-column-select" @change="if ($event.target.value) { toggleStakeholderColumn(sk, $event.target.value); $event.target.value = ''; }">
+                      <option value="">+ Add</option>
+                      <template x-for="c in allAvailableColumns.filter(c => !stakeholderConfig[sk].columns.includes(c.name))" :key="c.name">
+                        <option :value="c.name" x-text="c.name + ' (' + c.role + ')'"></option>
+                      </template>
+                    </select>
+                  </div>
+                </div>
+              </template>
+
+            </div>
+          </template>
+
+        </div>
+      </template>
+    </div>
+
+    <div class="step-actions">
+      <button @click="step = 2" class="btn">&larr; Back</button>
+      <button @click="goToStep4()" class="btn primary">Next &rarr;</button>
+    </div>
+  </section>
+
+  <!-- ─── Step 4: Metadata ─── -->
+  <section x-show="step === 4" x-transition>
+    <h2>Dataset metadata</h2>
+    <p class="hint">Provide identifying information for this dataset.</p>
+
+    <div class="metadata-form">
+      <div class="form-group">
+        <label class="field-label">Dataset name *</label>
+        <input type="text" x-model="metadata.datasetName" class="form-input"
+               placeholder="e.g. steam, movielens32m">
+      </div>
+      <div class="form-group">
+        <label class="field-label">Domain *</label>
+        <select x-model="metadata.domain" class="form-input">
+          <option value="">&mdash; Select &mdash;</option>
+          <template x-for="d in domainOptions" :key="d.key">
+            <option :value="d.key" x-text="d.label"></option>
+          </template>
+        </select>
+      </div>
+      <div class="form-group">
+        <label class="field-label">Version</label>
+        <input type="text" x-model="metadata.version" class="form-input"
+               placeholder="e.g. 2018, 32m, latest">
+      </div>
+      <div class="form-group">
+        <label class="field-label">Source URL</label>
+        <input type="url" x-model="metadata.sourceUrl" class="form-input"
+               placeholder="https://...">
+      </div>
+      <div class="form-group full-width">
+        <label class="field-label">Description</label>
+        <textarea x-model="metadata.description" class="form-textarea" rows="3"
+                  placeholder="Brief description of the dataset and its contents..."></textarea>
+      </div>
+      <div class="form-group full-width">
+        <label class="field-label">Citation</label>
+        <textarea x-model="metadata.citation" class="form-textarea mono" rows="3"
+                  placeholder="BibTeX entry or plain text citation..."></textarea>
+      </div>
+    </div>
+
+    <div class="step-actions">
+      <button @click="step = 3" class="btn">&larr; Back</button>
+      <button @click="goToStep5()" :disabled="!metadata.datasetName || !metadata.domain"
+              class="btn primary">Next &rarr;</button>
+      <p x-show="!metadata.datasetName || !metadata.domain" class="hint">
+        Dataset name and domain are required.
+      </p>
+    </div>
+  </section>
+
+  <!-- ─── Step 5: Export ─── -->
+  <section x-show="step === 5" x-transition>
+    <h2>Export configuration</h2>
+
+    <p x-show="yamlLoading" class="hint">Generating YAML&hellip;</p>
+    <p x-show="yamlError" class="error" x-text="yamlError"></p>
+
+    <template x-if="yamlPreview && !yamlLoading">
+      <div>
+        <div class="yaml-preview-container">
+          <div class="yaml-header">
+            <span class="yaml-filename" x-text="(metadata.datasetName || 'dataset') + '.yaml'"></span>
+            <button @click="downloadYaml()" class="btn primary btn-sm">
+              &#x2B07; Download
+            </button>
+          </div>
+          <pre class="yaml-preview"><code x-text="yamlPreview"></code></pre>
+        </div>
+
+        <div class="step-actions">
+          <button @click="step = 4" class="btn">&larr; Back</button>
+          <button @click="generateYamlPreview()" class="btn">&#x21BB; Regenerate</button>
+          <button @click="downloadYaml()" class="btn primary">&#x2B07; Download YAML</button>
+        </div>
+      </div>
+    </template>
+  </section>
+
+</main>
+
+<script src="{{ url_for('static', filename='js/app.js') }}"></script>
+</body>
+</html>
