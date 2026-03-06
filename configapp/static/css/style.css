@@ -774,3 +774,46 @@ select.form-input {
   padding: 0.35rem 0.75rem;
   font-size: 0.78rem;
 }
+
+
+/* ─── Config Bar ─── */
+
+.config-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1.25rem;
+  padding: 0.5rem 0.75rem;
+  margin-bottom: 1.5rem;
+  background: var(--grey-light);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  font-size: 0.78rem;
+}
+
+.config-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.config-label {
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-secondary);
+  font-size: 0.7rem;
+}
+
+
+/* ─── Save Feedback ─── */
+
+.save-success {
+  padding: 0.55rem 0.85rem;
+  margin-bottom: 1rem;
+  background: var(--green-light);
+  border: 1px solid #bbf7d0;
+  border-radius: var(--radius);
+  color: var(--green);
+  font-size: 0.85rem;
+  font-weight: 500;
+}

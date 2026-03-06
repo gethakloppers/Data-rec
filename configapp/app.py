@@ -7,9 +7,11 @@ YAML config file compatible with the recdata pipeline.
 
 Usage::
 
-    flask --app configapp/app.py run --port 5001
+    python configapp/app.py --data-path /path/to/data --output-path /path/to/configs
 
-Set the ``DATA_PATH`` environment variable to pre-fill the folder input.
+Or with environment variables::
+
+    DATA_PATH=/data OUTPUT_PATH=/configs flask --app configapp/app.py run --port 5001
 """
 
 from __future__ import annotations
@@ -34,6 +36,10 @@ from recdata.exceptions import DatasetLoadError
 logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
+
+# Path configuration — set via CLI args or environment variables
+app.config["DATA_PATH"] = os.environ.get("DATA_PATH", "")
+app.config["OUTPUT_PATH"] = os.environ.get("OUTPUT_PATH", "")
 
 # File extensions we consider as potential data files
 _DATA_EXTENSIONS = {
@@ -66,8 +72,11 @@ def _file_size_mb(path: Path) -> float:
 @app.route("/")
 def index():
     """Serve the main wizard page."""
-    default_path = os.environ.get("DATA_PATH", "")
-    return render_template("index.html", default_path=default_path)
+    return render_template(
+        "index.html",
+        default_path=app.config["DATA_PATH"],
+        output_path=app.config["OUTPUT_PATH"],
+    )
 
 
 @app.route("/api/scan-folder", methods=["POST"])
@@ -395,11 +404,30 @@ _WIZARD_TO_YAML_TYPE: dict[str, str | None] = {
     "datetime": "token",   # standalone datetimes become categorical
     "boolean": "token",    # booleans become categorical
     "url": "text",         # URLs stored as text
-    "misc": "token",       # misc → categorical fallback
+    "misc": "misc",        # misc retained as its own type
 }
 
 # Schema categories handled by the schema section (excluded from features)
 _SCHEMA_SKIP_CATEGORIES = {"user_id", "item_id", "timestamp"}
+
+# Taxonomy category order per file role (mirrors the JS TAXONOMY constant)
+_TAXONOMY_CATS: dict[str, list[str]] = {
+    "interactions": [
+        "user_id", "item_id", "explicit_feedback", "implicit_feedback",
+        "timestamp", "session_data", "interaction_context", "other",
+    ],
+    "items": [
+        "item_id", "descriptive_features", "content_features",
+        "provider_upstream_info", "other",
+    ],
+    "users": [
+        "user_id", "demographics", "downstream_stakeholder_info",
+        "additional_attributes", "other",
+    ],
+}
+
+# Entity stakeholders have an id_column; signal stakeholders do not
+_ENTITY_STAKEHOLDERS = {"consumer", "provider", "upstream", "downstream"}
 
 
 @app.route("/api/export-config", methods=["POST"])
@@ -421,6 +449,40 @@ def export_config():
     except Exception as exc:
         logger.exception("Failed to build config")
         return jsonify({"error": f"Failed to build config: {exc}"}), 500
+
+
+@app.route("/api/save-config", methods=["POST"])
+def save_config():
+    """Save a YAML config to the configured output directory.
+
+    Request JSON::
+
+        {"yaml": "dataset_name: steam\\n...", "filename": "steam.yaml"}
+
+    Response JSON::
+
+        {"saved_to": "/path/to/configs/steam.yaml"}
+    """
+    data = request.get_json(silent=True) or {}
+    yaml_str = data.get("yaml", "")
+    filename = data.get("filename", "dataset.yaml")
+
+    output_dir = app.config.get("OUTPUT_PATH", "")
+    if not output_dir:
+        return jsonify({"error": "No output path configured"}), 400
+
+    if not yaml_str:
+        return jsonify({"error": "No YAML content provided"}), 400
+
+    try:
+        out_path = Path(output_dir)
+        out_path.mkdir(parents=True, exist_ok=True)
+        dest = out_path / filename
+        dest.write_text(yaml_str, encoding="utf-8")
+        return jsonify({"saved_to": str(dest)})
+    except Exception as exc:
+        logger.exception("Failed to save config")
+        return jsonify({"error": f"Failed to save: {exc}"}), 500
 
 
 def _build_yaml_config(data: dict) -> str:
@@ -461,7 +523,16 @@ def _build_yaml_config(data: dict) -> str:
     for sk in ("consumer", "provider", "upstream", "downstream",
                "system", "third_party"):
         sk_cfg = stakeholder_config.get(sk, {})
-        roles[sk] = bool(sk_cfg.get("enabled", False))
+        enabled = bool(sk_cfg.get("enabled", False))
+        sk_entry: OrderedDict = OrderedDict()
+        sk_entry["supported"] = enabled
+        if enabled:
+            if sk in _ENTITY_STAKEHOLDERS:
+                id_col = (sk_cfg.get("id_column") or "").strip()
+                sk_entry["id"] = _FlowList([id_col] if id_col else [])
+            cols = sk_cfg.get("columns") or []
+            sk_entry["features"] = _FlowList(list(cols))
+        roles[sk] = sk_entry
     config["stakeholder_roles"] = roles
 
     # ── Files ─────────────────────────────────────────────────────────────
@@ -481,6 +552,15 @@ def _build_yaml_config(data: dict) -> str:
             files_dict[role] = fnames[0]
         else:
             files_dict[role] = fnames
+
+    # Include "other" files if present
+    other_fnames = role_files.get("other", [])
+    if other_fnames:
+        if len(other_fnames) == 1:
+            files_dict["other"] = other_fnames[0]
+        else:
+            files_dict["other"] = other_fnames
+
     config["files"] = files_dict
 
     # ── Schema ────────────────────────────────────────────────────────────
@@ -515,6 +595,8 @@ def _build_yaml_config(data: dict) -> str:
     config["schema"] = schema
 
     # ── Feature declarations ──────────────────────────────────────────────
+    # Only build feature sections for standard roles (items, interactions, users)
+    # "other" files are included in the files section but don't get feature declarations
     for role in ("items", "interactions", "users"):
         feature_key = {
             "items": "item_features",
@@ -530,7 +612,7 @@ def _build_yaml_config(data: dict) -> str:
             continue
 
         features: OrderedDict = OrderedDict()
-        for yaml_type in ("token", "float", "token_seq", "text", "drop"):
+        for yaml_type in ("token", "float", "token_seq", "text", "misc", "drop"):
             features[yaml_type] = []
 
         for tab_key in role_tabs:
@@ -553,6 +635,41 @@ def _build_yaml_config(data: dict) -> str:
             features[key] = _FlowList(features[key])
         config[feature_key] = features
 
+    # ── Taxonomy classification ───────────────────────────────────────────
+    # Groups every column in every file by its taxonomy schema category.
+    # Downstream profiling can use this to display columns by category.
+    taxonomy: OrderedDict = OrderedDict()
+    for role in ("interactions", "items", "users"):
+        role_tabs = [tk for tk in column_configs if tk.startswith(role + "__")]
+        if not role_tabs:
+            taxonomy[role] = None
+            continue
+
+        cats = _TAXONOMY_CATS.get(role, [])
+        role_taxonomy: OrderedDict = OrderedDict()
+        for cat in cats:
+            role_taxonomy[cat] = []
+
+        for tab_key in role_tabs:
+            for col_name, cfg in column_configs[tab_key].items():
+                cat = (cfg.get("schema") or "").strip()
+                if not cat:
+                    cat = "other"
+                if cat in role_taxonomy:
+                    if col_name not in role_taxonomy[cat]:
+                        role_taxonomy[cat].append(col_name)
+                else:
+                    # Unknown category → bucket into "other"
+                    if col_name not in role_taxonomy.get("other", []):
+                        role_taxonomy.setdefault("other", []).append(col_name)
+
+        # Wrap in FlowList
+        for cat in role_taxonomy:
+            role_taxonomy[cat] = _FlowList(role_taxonomy[cat])
+        taxonomy[role] = role_taxonomy
+
+    config["taxonomy"] = taxonomy
+
     # ── Dump to YAML string ───────────────────────────────────────────────
     yaml_str = yaml.dump(
         config,
@@ -566,7 +683,7 @@ def _build_yaml_config(data: dict) -> str:
     # Post-process: insert blank lines before major sections
     _section_keys = {
         "stakeholder_roles:", "files:", "schema:",
-        "item_features:", "interaction_features:", "user_features:",
+        "item_features:", "interaction_features:", "user_features:", "taxonomy:",
     }
     lines = yaml_str.split("\n")
     result: list[str] = []
@@ -580,4 +697,22 @@ def _build_yaml_config(data: dict) -> str:
 
 
 if __name__ == "__main__":
-    app.run(debug=True, port=5001)
+    import argparse
+
+    parser = argparse.ArgumentParser(description="RecData ConfigApp")
+    parser.add_argument(
+        "--data-path",
+        default=os.environ.get("DATA_PATH", ""),
+        help="Path to the raw dataset folder (pre-fills the folder input)",
+    )
+    parser.add_argument(
+        "--output-path",
+        default=os.environ.get("OUTPUT_PATH", ""),
+        help="Directory where generated YAML configs are saved",
+    )
+    parser.add_argument("--port", type=int, default=5001)
+    args = parser.parse_args()
+
+    app.config["DATA_PATH"] = args.data_path
+    app.config["OUTPUT_PATH"] = args.output_path
+    app.run(debug=True, port=args.port)

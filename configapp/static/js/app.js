@@ -75,10 +75,13 @@ const TYPE_LABELS = {
 
 // ─── Main component ─────────────────────────────────────────────────────────
 
-function configApp(defaultPath) {
+function configApp(defaultPath, outputPath) {
   return {
     // ── Wizard state ──
     step: 1,
+
+    // ── Path configuration ──
+    outputPath: outputPath || "",
 
     // ── Step 1: Folder scan ──
     folderPath: defaultPath || localStorage.getItem("configapp_folder") || "",
@@ -129,13 +132,21 @@ function configApp(defaultPath) {
     yamlPreview: "",
     yamlLoading: false,
     yamlError: "",
+    savedPath: "",
 
     // ── Computed ──
     get hasInteractions() {
       return this.files.some((f) => f.role === "interactions");
     },
 
-    /** Returns list of { role, filename, tabKey } for all assigned files. */
+    /** YAML filename: "{name}_{version}.yaml" or "{name}.yaml" if no version. */
+    get yamlFilename() {
+      const name = this.metadata.datasetName || "dataset";
+      const version = (this.metadata.version || "").trim();
+      return version ? `${name}_${version}.yaml` : `${name}.yaml`;
+    },
+
+    /** Returns list of { role, filename, tabKey } for all assigned files (excluding "skip"). */
     get assignedFiles() {
       const result = [];
       for (const f of this.files) {
@@ -315,6 +326,12 @@ function configApp(defaultPath) {
         // Everything else left unassigned for users
       }
 
+      if (fileRole === "other") {
+        // For supplementary files, text → content_features, everything else unassigned
+        if (colType === "text") return "content_features";
+        if (colType === "url") return "other";
+      }
+
       return "";
     },
 
@@ -322,9 +339,18 @@ function configApp(defaultPath) {
 
     /**
      * Get taxonomy categories available for the active tab's role.
+     * For "other" files, return a generic set of categories.
      */
     taxonomyCategoriesFor(tabKey) {
       const role = (tabKey || this.activeTab).split("__")[0];
+      if (role === "other") {
+        // Generic categories for supplementary files (no required fields)
+        return [
+          { key: "descriptive_features", label: "Descriptive Features", desc: "Structured metadata", singleton: false, required: false },
+          { key: "content_features", label: "Content Features", desc: "Unstructured content", singleton: false, required: false },
+          { key: "other", label: "Other", desc: "Does not fit any category", singleton: false, required: false },
+        ];
+      }
       return TAXONOMY[role]?.categories || [];
     },
 
@@ -648,11 +674,33 @@ function configApp(defaultPath) {
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = (this.metadata.datasetName || "dataset") + ".yaml";
+      a.download = this.yamlFilename;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
+    },
+
+    async saveYaml() {
+      if (!this.yamlPreview || !this.outputPath) return;
+      this.savedPath = "";
+      this.yamlError = "";
+      const filename = this.yamlFilename;
+      try {
+        const res = await fetch("/api/save-config", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ yaml: this.yamlPreview, filename }),
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          this.yamlError = data.error || "Save failed";
+          return;
+        }
+        this.savedPath = data.saved_to;
+      } catch (err) {
+        this.yamlError = "Network error: " + err.message;
+      }
     },
   };
 }

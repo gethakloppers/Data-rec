@@ -1,0 +1,42 @@
+dataset_name: steam
+domain: media_and_entertainment
+version: '2018'
+source_url: https://github.com/kang205/SASRec
+citation: "@misc{Steam,\n      title={Self-Attentive Sequential Recommendation}, \n      author={Wang-Cheng Kang and Julian\
+  \ McAuley},\n      year={2018},\n      eprint={1808.09781},\n      archivePrefix={arXiv},\n      url={https://arxiv.org/abs/1808.09781},\
+  \ \n}\n"
+
+stakeholder_roles:
+  consumer: true
+  provider: true
+  upstream: true
+  downstream: false
+  system: true
+  third_party: false
+
+files:
+  interactions: steam_reviews.json
+  items: steam_games.json
+  users: null
+
+schema:
+  user_identifier: [user_id]
+  item_identifier: [id, product_id]
+  timestamp: [date]
+  rating: []
+
+item_features:
+  token: [publisher, release_date, early_access, developer, sentiment]
+  float: [discount_price, price]
+  token_seq: [genres, tags, specs]
+  text: [app_name, title, url, reviews_url]
+  drop: [metascore]
+
+interaction_features:
+  token: [page_order, early_access, page, compensation]
+  float: [hours, products, found_funny]
+  token_seq: []
+  text: [text]
+  drop: [username]
+
+user_features: null

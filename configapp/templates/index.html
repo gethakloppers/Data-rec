@@ -14,7 +14,7 @@
   <p class="subtitle">Dataset configuration tool</p>
 </header>
 
-<main x-data="configApp('{{ default_path }}')" x-cloak>
+<main x-data="configApp('{{ default_path }}', '{{ output_path }}')" x-cloak>
 
   <!-- Step indicator -->
   <nav class="steps">
@@ -38,6 +38,22 @@
       <span class="step-num">5</span> Export
     </button>
   </nav>
+
+  <!-- Path configuration bar -->
+  <div class="config-bar" x-show="folderPath || outputPath">
+    <template x-if="folderPath">
+      <span class="config-item">
+        <span class="config-label">Data</span>
+        <span class="mono" x-text="folderPath"></span>
+      </span>
+    </template>
+    <template x-if="outputPath">
+      <span class="config-item">
+        <span class="config-label">Output</span>
+        <span class="mono" x-text="outputPath"></span>
+      </span>
+    </template>
+  </div>
 
   <!-- ─── Step 1: Folder & File Assignment ─── -->
   <section x-show="step === 1" x-transition>
@@ -78,6 +94,7 @@
                     <option value="interactions">Interactions</option>
                     <option value="items">Items</option>
                     <option value="users">Users</option>
+                    <option value="other">Other</option>
                     <option value="skip">Skip</option>
                   </select>
                 </td>
@@ -380,18 +397,29 @@
       <div>
         <div class="yaml-preview-container">
           <div class="yaml-header">
-            <span class="yaml-filename" x-text="(metadata.datasetName || 'dataset') + '.yaml'"></span>
-            <button @click="downloadYaml()" class="btn primary btn-sm">
-              &#x2B07; Download
-            </button>
+            <span class="yaml-filename" x-text="yamlFilename"></span>
+            <template x-if="outputPath">
+              <button @click="saveYaml()" class="btn primary btn-sm">Save to disk</button>
+            </template>
+            <template x-if="!outputPath">
+              <button @click="downloadYaml()" class="btn primary btn-sm">&#x2B07; Download</button>
+            </template>
           </div>
           <pre class="yaml-preview"><code x-text="yamlPreview"></code></pre>
         </div>
 
+        <!-- Save success message -->
+        <p x-show="savedPath" class="save-success">
+          Saved to <span class="mono" x-text="savedPath"></span>
+        </p>
+
         <div class="step-actions">
           <button @click="step = 4" class="btn">&larr; Back</button>
           <button @click="generateYamlPreview()" class="btn">&#x21BB; Regenerate</button>
-          <button @click="downloadYaml()" class="btn primary">&#x2B07; Download YAML</button>
+          <template x-if="outputPath">
+            <button @click="saveYaml()" class="btn primary">Save to disk</button>
+          </template>
+          <button @click="downloadYaml()" class="btn" :class="{ primary: !outputPath }">&#x2B07; Download</button>
         </div>
       </div>
     </template>
