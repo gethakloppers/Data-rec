@@ -70,6 +70,23 @@
 
     <p x-show="scanError" class="error" x-text="scanError"></p>
 
+    <!-- Edit existing config -->
+    <div class="edit-config-section">
+      <h3>Or edit an existing config</h3>
+      <div class="input-row">
+        <input type="text" x-model="configPath" placeholder="/path/to/config.yaml"
+               class="folder-input" @keydown.enter="loadConfig()">
+        <button @click="loadConfig()" :disabled="loadingConfig || !configPath.trim()" class="btn">
+          <span x-show="!loadingConfig">Load Config</span>
+          <span x-show="loadingConfig">Loading&hellip;</span>
+        </button>
+      </div>
+      <p x-show="configLoadError" class="error" x-text="configLoadError"></p>
+      <p x-show="configLoaded" class="config-loaded-banner">
+        &#x2713; Config loaded &mdash; column types and schema will be applied as you review each file.
+      </p>
+    </div>
+
     <template x-if="files.length > 0">
       <div>
         <h3>Detected files</h3>
@@ -190,7 +207,7 @@
                     <select x-model="getColumnConfig(col).type" class="type-select"
                             @change="autoUpdateSchema(col)">
                       <option value="">— Select —</option>
-                      <option value="float">Number</option>
+                      <option value="float">Numerical</option>
                       <option value="token">Categorical</option>
                       <option value="token_seq">Categorical list</option>
                       <option value="text">Free text</option>
@@ -213,7 +230,7 @@
                   </td>
                   <td>
                     <select class="schema-select"
-                            x-effect="{ step; const v = getColumnConfig(col).schema || ''; $nextTick(() => $el.value = v) }"
+                            x-model="getColumnConfig(col).schema"
                             @change="setSchemaForColumn(col, $event.target.value)">
                       <option value="">— Unassigned —</option>
                       <template x-for="cat in taxonomyCategoriesFor(activeTab)" :key="cat.key">

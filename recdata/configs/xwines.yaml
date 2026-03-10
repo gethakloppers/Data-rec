@@ -3,16 +3,16 @@ domain: ecommerce_and_retail
 source_url: https://github.com/rogerioxavier/X-Wines
 citation: |
   @Article{xwines,
-  AUTHOR = {de Azambuja, Rogério Xavier and Morais, A. Jorge and Filipe, Vítor},
-  TITLE = {X-Wines: A Wine Dataset for Recommender Systems and Machine Learning},
-  JOURNAL = {Big Data and Cognitive Computing},
-  VOLUME = {7},
-  YEAR = {2023},
-  NUMBER = {1},
-  ARTICLE-NUMBER = {20},
-  URL = {https://www.mdpi.com/2504-2289/7/1/20},
-  DOI = {10.3390/bdcc7010020}
-  }
+    AUTHOR = {de Azambuja, Rogério Xavier and Morais, A. Jorge and Filipe, Vítor},
+    TITLE = {X-Wines: A Wine Dataset for Recommender Systems and Machine Learning},
+    JOURNAL = {Big Data and Cognitive Computing},
+    VOLUME = {7},
+    YEAR = {2023},
+    NUMBER = {1},
+    ARTICLE-NUMBER = {20},
+    URL = {https://www.mdpi.com/2504-2289/7/1/20},
+    DOI = {10.3390/bdcc7010020}
+    }
 
 stakeholder_roles:
   consumer:
@@ -29,13 +29,17 @@ stakeholder_roles:
     supported: false
   system:
     supported: true
-    features: [regionid, code]
+    features: [regionid, regionname, country, code]
   third_party:
     supported: false
 
 files:
-  interactions: XWines_Full_21M_ratings.zip
-  items: XWines_Full_100K_wines.zip
+  interactions:
+    filename: XWines_Full_21M_ratings.csv
+    archive: XWines_Full_21M_ratings.zip
+  items:
+    filename: XWines_Full_100K_wines.csv
+    archive: XWines_Full_100K_wines.zip
   users: null
 
 schema:
@@ -45,15 +49,15 @@ schema:
   rating: [rating]
 
 item_features:
-  token: [type, elaborate, body, acidity, code, regionid, wineryid]
+  token: [wineid, type, elaborate, grapes, body, acidity, code, regionid, wineryid]
   float: [abv]
   token_seq: [harmonize, vintages]
   text: [winename, country, regionname, wineryname, website]
-  misc: [grapes]
+  misc: []
   drop: []
 
 interaction_features:
-  token: [vintage]
+  token: [userid, wineid, vintage, date]
   float: [rating]
   token_seq: []
   text: []
@@ -61,6 +65,8 @@ interaction_features:
   drop: [ratingid]
 
 user_features: null
+
+other_features: null
 
 taxonomy:
   interactions:
@@ -75,7 +81,8 @@ taxonomy:
   items:
     item_id: [wineid]
     descriptive_features: [type, elaborate, grapes, harmonize, abv, body, acidity, code, regionid, vintages]
-    content_features: [winename, country, regionname, wineryname]
-    provider_upstream_info: [wineryid]
+    content_features: [winename, country, regionname]
+    provider_upstream_info: [wineryid, wineryname]
     other: [website]
   users: null
+  other: null

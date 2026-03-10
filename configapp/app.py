@@ -487,6 +487,16 @@ _WIZARD_TO_YAML_TYPE: dict[str, str | None] = {
     "misc": "misc",        # misc retained as its own type
 }
 
+# YAML feature type → Wizard type (reverse mapping for loading configs)
+_YAML_TO_WIZARD_TYPE: dict[str, str] = {
+    "token": "token",
+    "float": "float",
+    "token_seq": "token_seq",
+    "text": "text",
+    "misc": "misc",
+    "drop": "drop",
+}
+
 # Schema categories handled by the schema section (excluded from features)
 _SCHEMA_SKIP_CATEGORIES = {"user_id", "item_id", "timestamp"}
 
@@ -570,6 +580,222 @@ def save_config():
     except Exception as exc:
         logger.exception("Failed to save config")
         return jsonify({"error": f"Failed to save: {exc}"}), 500
+
+
+@app.route("/api/parse-config", methods=["POST"])
+def parse_config():
+    """Parse an existing YAML config and return wizard-compatible state.
+
+    Request JSON::
+
+        {"config_path": "/path/to/steam.yaml"}
+
+    Response JSON::
+
+        {
+          "metadata": {...},
+          "fileRoles": [...],
+          "stakeholderConfig": {...},
+          "pendingColumnConfigs": {...}
+        }
+    """
+    data = request.get_json(silent=True) or {}
+    config_path = data.get("config_path", "").strip()
+
+    if not config_path:
+        return jsonify({"error": "config_path is required"}), 400
+
+    path = Path(config_path)
+    if not path.is_file():
+        return jsonify({"error": f"File not found: {config_path}"}), 404
+
+    try:
+        result = _parse_yaml_to_wizard_state(path)
+        return jsonify(result)
+    except Exception as exc:
+        logger.exception("Failed to parse config")
+        return jsonify({"error": f"Failed to parse config: {exc}"}), 500
+
+
+def _parse_yaml_to_wizard_state(config_path: Path) -> dict:
+    """Parse a YAML config file and return wizard-compatible state.
+
+    Reverse-maps the YAML structure back to the wizard's internal format,
+    allowing an existing config to be loaded for editing.
+
+    Returns:
+        A dict with keys: ``metadata``, ``fileRoles``, ``stakeholderConfig``,
+        ``pendingColumnConfigs``.
+    """
+    with open(config_path, "r", encoding="utf-8") as f:
+        config = yaml.safe_load(f)
+
+    if not config or not isinstance(config, dict):
+        raise ValueError("Invalid YAML config: expected a mapping")
+
+    # ── Metadata ──────────────────────────────────────────────────────────
+    metadata = {
+        "datasetName": config.get("dataset_name", "") or "",
+        "domain": config.get("domain", "") or "",
+        "version": str(config.get("version", "") or ""),
+        "sourceUrl": config.get("source_url", "") or "",
+        "description": (config.get("description", "") or "").strip(),
+        "citation": (config.get("citation", "") or "").strip(),
+    }
+
+    # ── File roles ────────────────────────────────────────────────────────
+    file_roles: list[dict] = []
+    files_section = config.get("files", {}) or {}
+    for role in ("interactions", "items", "users", "other"):
+        entry = files_section.get(role)
+        if entry is None:
+            continue
+        if isinstance(entry, str):
+            file_roles.append({"filename": entry, "role": role})
+        elif isinstance(entry, dict):
+            fr: dict = {"filename": entry.get("filename", ""), "role": role}
+            if entry.get("archive"):
+                fr["archive"] = entry["archive"]
+            file_roles.append(fr)
+        elif isinstance(entry, list):
+            for item in entry:
+                if isinstance(item, str):
+                    file_roles.append({"filename": item, "role": role})
+                elif isinstance(item, dict):
+                    fr = {"filename": item.get("filename", ""), "role": role}
+                    if item.get("archive"):
+                        fr["archive"] = item["archive"]
+                    file_roles.append(fr)
+
+    # ── Stakeholder config ────────────────────────────────────────────────
+    stakeholder_cfg: dict = {}
+    raw_stakeholders = config.get("stakeholder_roles", {}) or {}
+    for sk in ("consumer", "provider", "upstream", "downstream",
+               "system", "third_party"):
+        raw = raw_stakeholders.get(sk)
+        if raw is None:
+            raw = False
+        if isinstance(raw, bool):
+            # Flat format: just a boolean
+            entry_dict: dict = {"enabled": raw}
+            if sk in _ENTITY_STAKEHOLDERS:
+                entry_dict["id_column"] = ""
+            entry_dict["columns"] = []
+        elif isinstance(raw, dict):
+            # Nested format (wizard-generated or hand-written)
+            enabled = bool(raw.get("supported", raw.get("enabled", False)))
+            entry_dict = {"enabled": enabled}
+            if sk in _ENTITY_STAKEHOLDERS:
+                id_list = raw.get("id", [])
+                entry_dict["id_column"] = (
+                    id_list[0] if isinstance(id_list, list) and id_list else ""
+                )
+            entry_dict["columns"] = list(
+                raw.get("features", raw.get("columns", [])) or []
+            )
+        else:
+            entry_dict = {"enabled": False}
+            if sk in _ENTITY_STAKEHOLDERS:
+                entry_dict["id_column"] = ""
+            entry_dict["columns"] = []
+        stakeholder_cfg[sk] = entry_dict
+
+    # ── Pending column configs ────────────────────────────────────────────
+    # Built from schema + *_features + taxonomy sections.
+    pending: dict[str, dict] = {}
+
+    # 1. Parse schema section → column name to {type, schema}
+    schema = config.get("schema", {}) or {}
+    schema_columns: dict[str, dict] = {}
+    _SCHEMA_FIELD_MAP = {
+        "user_identifier": {"type": "token", "schema": "user_id"},
+        "item_identifier": {"type": "token", "schema": "item_id"},
+        "timestamp":       {"type": "datetime", "schema": "timestamp"},
+        "rating":          {"type": "float", "schema": "explicit_feedback"},
+    }
+    for field, defaults in _SCHEMA_FIELD_MAP.items():
+        for col in (schema.get(field) or []):
+            schema_columns[col] = dict(defaults)
+
+    # 2. Parse feature sections + taxonomy per role
+    _ROLE_FEATURE_KEYS = {
+        "items": "item_features",
+        "interactions": "interaction_features",
+        "users": "user_features",
+        "other": "other_features",
+    }
+
+    for role in ("interactions", "items", "users", "other"):
+        feature_key = _ROLE_FEATURE_KEYS[role]
+        features_section = config.get(feature_key, {}) or {}
+        taxonomy_section = (
+            (config.get("taxonomy", {}) or {}).get(role, {}) or {}
+        )
+
+        role_file_roles = [fr for fr in file_roles if fr["role"] == role]
+        if not role_file_roles:
+            continue
+
+        # Feature type map: col → wizard type
+        feature_type_map: dict[str, str] = {}
+        for yaml_type, cols in features_section.items():
+            if not cols:
+                continue
+            wizard_type = _YAML_TO_WIZARD_TYPE.get(yaml_type, "")
+            if wizard_type:
+                for col in cols:
+                    feature_type_map[col] = wizard_type
+
+        # Taxonomy schema map: col → category
+        taxonomy_map: dict[str, str] = {}
+        for cat, cols in taxonomy_section.items():
+            if not cols:
+                continue
+            for col in cols:
+                taxonomy_map[col] = cat
+
+        # Build pending config per file in this role
+        for fr in role_file_roles:
+            tab_key = fr["role"] + "__" + fr["filename"]
+            col_configs: dict[str, dict] = {}
+
+            # Add schema columns (user_id, item_id, timestamp, rating)
+            for col, cfg in schema_columns.items():
+                col_configs[col] = {
+                    "type": cfg["type"],
+                    "separator": "|",
+                    "schema": cfg["schema"],
+                }
+
+            # Add feature columns
+            for col, wizard_type in feature_type_map.items():
+                if col not in col_configs:
+                    col_configs[col] = {
+                        "type": wizard_type,
+                        "separator": "|",
+                        "schema": taxonomy_map.get(col, ""),
+                    }
+
+            # Add taxonomy-only columns (in taxonomy but not features/schema)
+            for cat, cols in taxonomy_section.items():
+                if not cols:
+                    continue
+                for col in cols:
+                    if col not in col_configs:
+                        col_configs[col] = {
+                            "type": "",
+                            "separator": "|",
+                            "schema": cat,
+                        }
+
+            pending[tab_key] = col_configs
+
+    return {
+        "metadata": metadata,
+        "fileRoles": file_roles,
+        "stakeholderConfig": stakeholder_cfg,
+        "pendingColumnConfigs": pending,
+    }
 
 
 def _build_yaml_config(data: dict) -> str:
@@ -715,9 +941,6 @@ def _build_yaml_config(data: dict) -> str:
                 cat = cfg.get("schema", "")
                 col_type = cfg.get("type", "")
 
-                # Skip columns handled by the schema section
-                if cat in _SCHEMA_SKIP_CATEGORIES:
-                    continue
                 if not col_type:
                     continue
 

@@ -61,7 +61,7 @@ const _NAME_HINTS = [
 
 // Type labels for display
 const TYPE_LABELS = {
-  float: "Number",
+  float: "Numerical",
   token: "Categorical",
   token_seq: "Cat. list",
   text: "Free text",
@@ -134,6 +134,13 @@ function configApp(defaultPath, outputPath) {
     yamlError: "",
     savedPath: "",
 
+    // ── Edit Config ──
+    configPath: "",
+    loadingConfig: false,
+    configLoadError: "",
+    configLoaded: false,
+    pendingColumnConfigs: {},
+
     // ── Computed ──
     get hasInteractions() {
       return this.files.some((f) => f.role === "interactions");
@@ -200,6 +207,85 @@ function configApp(defaultPath, outputPath) {
       }
     },
 
+    // ── Step 1: Load existing config ──
+    async loadConfig() {
+      this.loadingConfig = true;
+      this.configLoadError = "";
+      this.configLoaded = false;
+
+      try {
+        const res = await fetch("/api/parse-config", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ config_path: this.configPath }),
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          this.configLoadError = data.error || "Failed to load config";
+          return;
+        }
+
+        // Apply metadata
+        if (data.metadata) {
+          Object.assign(this.metadata, data.metadata);
+        }
+
+        // Apply stakeholder config
+        if (data.stakeholderConfig) {
+          for (const [sk, cfg] of Object.entries(data.stakeholderConfig)) {
+            if (this.stakeholderConfig[sk]) {
+              Object.assign(this.stakeholderConfig[sk], cfg);
+            }
+          }
+        }
+
+        // Store pending column configs (applied when previews load in switchTab)
+        this.pendingColumnConfigs = data.pendingColumnConfigs || {};
+
+        // Clear existing previews and column configs to force re-load with pending configs
+        this.previews = {};
+        this.columnConfigs = {};
+
+        // Scan folder if not done yet
+        if (this.folderPath && this.files.length === 0) {
+          await this.scanFolder();
+        }
+
+        // Apply file roles to scanned files
+        if (data.fileRoles && this.files.length > 0) {
+          this._applyFileRoles(data.fileRoles);
+        }
+
+        this.configLoaded = true;
+      } catch (err) {
+        this.configLoadError = "Network error: " + err.message;
+      } finally {
+        this.loadingConfig = false;
+      }
+    },
+
+    /**
+     * Match file roles from a loaded config to scanned files.
+     * Sets the `role` on matching file entries.
+     */
+    _applyFileRoles(fileRoles) {
+      for (const fr of fileRoles) {
+        // Try exact match (filename + archive)
+        let match = this.files.find((f) => {
+          if (f.filename !== fr.filename) return false;
+          if (fr.archive) return f.archive === fr.archive;
+          return !f.archive;
+        });
+        // Fallback: match by filename only (for hand-written configs without archive info)
+        if (!match) {
+          match = this.files.find((f) => f.filename === fr.filename && !f.role);
+        }
+        if (match) {
+          match.role = fr.role;
+        }
+      }
+    },
+
     // ── Step 1 → 2 ──
     async goToStep2() {
       if (!this.hasInteractions) return;
@@ -260,6 +346,20 @@ function configApp(defaultPath, outputPath) {
               this.columnConfigs[tabKey][col].schema = suggestedSchema;
             }
           }
+        }
+
+        // Apply pending column configs from loaded YAML (overrides auto-suggestions)
+        const pendingCfg = this.pendingColumnConfigs[tabKey];
+        if (pendingCfg) {
+          for (const [pcol, pcfg] of Object.entries(pendingCfg)) {
+            if (this.columnConfigs[tabKey][pcol]) {
+              if (pcfg.type) this.columnConfigs[tabKey][pcol].type = pcfg.type;
+              if (pcfg.separator) this.columnConfigs[tabKey][pcol].separator = pcfg.separator;
+              if (pcfg.schema) this.columnConfigs[tabKey][pcol].schema = pcfg.schema;
+            }
+            // Columns in pending config but not in file are silently ignored
+          }
+          delete this.pendingColumnConfigs[tabKey];
         }
       } catch (err) {
         this.previewError = "Network error: " + err.message;

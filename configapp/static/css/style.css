@@ -825,3 +825,28 @@ select.form-input {
   font-size: 0.85rem;
   font-weight: 500;
 }
+
+
+/* ─── Edit Config Section (Step 1) ─── */
+
+.edit-config-section {
+  margin-top: 1.25rem;
+  padding-top: 1.25rem;
+  border-top: 1px dashed var(--border);
+}
+
+.edit-config-section h3 {
+  margin-top: 0;
+  margin-bottom: 0.75rem;
+}
+
+.config-loaded-banner {
+  padding: 0.55rem 0.85rem;
+  margin-top: 0.5rem;
+  background: var(--green-light);
+  border: 1px solid #bbf7d0;
+  border-radius: var(--radius);
+  color: var(--green);
+  font-size: 0.85rem;
+  font-weight: 500;
+}
