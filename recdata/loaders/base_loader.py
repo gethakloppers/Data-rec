@@ -101,16 +101,28 @@ def normalize_file_def(file_def: str | dict[str, Any] | None) -> dict[str, Any] 
     return dict(file_def)  # shallow copy to avoid mutating the config
 
 
+# Mapping from legacy type names to current canonical names
+_TYPE_ALIASES: dict[str, str] = {
+    "token": "object",
+    "token_seq": "object",
+    "drop": "exclude",
+}
+
+
 def get_feature_map(config: dict[str, Any], df_role: str) -> dict[str, str]:
     """Build a flat column-to-type mapping from the config's feature declarations.
+
+    Legacy type names (``token`` → ``object``, ``token_seq`` → ``object``,
+    ``drop`` → ``exclude``) are normalised automatically for backward
+    compatibility.
 
     Args:
         config: The validated config dictionary.
         df_role: One of 'interactions', 'items', 'users'.
 
     Returns:
-        A dict mapping column names (lowercase) to their declared types.
-        Example: ``{'publisher': 'token', 'price': 'float', 'genres': 'token_seq'}``
+        A dict mapping column names (lowercase) to their canonical types.
+        Example: ``{'publisher': 'object', 'price': 'float', 'genres': 'object'}``
     """
     feature_key = {
         "interactions": "interaction_features",
@@ -126,8 +138,9 @@ def get_feature_map(config: dict[str, Any], df_role: str) -> dict[str, str]:
 
     for feat_type, columns in feature_config.items():
         if isinstance(columns, list):
+            canonical = _TYPE_ALIASES.get(feat_type, feat_type)
             for col in columns:
-                flat_map[col.lower()] = feat_type
+                flat_map[col.lower()] = canonical
 
     return flat_map
 
@@ -202,9 +215,11 @@ def _validate_config(config: dict[str, Any], config_path: Path) -> None:
             if not isinstance(features, dict):
                 errors.append(f"'{feature_key}' must be a dict or null")
             else:
-                valid_types = {"token", "float", "token_seq", "text", "drop"}
+                valid_types = {"object", "float", "text", "datetime", "misc", "exclude"}
+                legacy_types = {"token", "token_seq", "drop"}  # accepted for backward compat
+                all_accepted = valid_types | legacy_types
                 for feat_type, columns in features.items():
-                    if feat_type not in valid_types:
+                    if feat_type not in all_accepted:
                         errors.append(
                             f"'{feature_key}' has invalid type '{feat_type}'. "
                             f"Must be one of: {sorted(valid_types)}"

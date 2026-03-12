@@ -1,0 +1,70 @@
+{% extends "base.html" %}
+{% block title %}RecData — Dataset Catalogue{% endblock %}
+
+{% block content %}
+<section class="page-header">
+    <h1>Dataset Catalogue</h1>
+    <p class="lead">{{ datasets | length }} dataset{{ 's' if datasets | length != 1 }} available</p>
+</section>
+
+{% if not datasets %}
+<div class="empty-state">
+    <h2>No datasets found</h2>
+    <p>
+        Run the pipeline to process datasets, then point this app at the output directory.<br>
+        <code>python -m recdata.pipeline --config &lt;yaml&gt; --raw &lt;dir&gt; --output &lt;dir&gt;</code>
+    </p>
+</div>
+{% else %}
+<div class="dataset-grid">
+    {% for ds in datasets %}
+    <a href="/dataset/{{ ds.name }}" class="dataset-card">
+        <div class="card-header">
+            <h2 class="card-title">{{ ds.name }}</h2>
+            <span class="domain-badge">{{ ds.domain | domain_label }}</span>
+        </div>
+
+        {% if ds.description %}
+        <p class="card-description">{{ ds.description[:120] }}{% if ds.description|length > 120 %}&hellip;{% endif %}</p>
+        {% endif %}
+
+        <div class="card-stats">
+            <div class="stat">
+                <span class="stat-value">{{ ds.n_users | fmt_number }}</span>
+                <span class="stat-label">Users</span>
+            </div>
+            <div class="stat">
+                <span class="stat-value">{{ ds.n_items | fmt_number }}</span>
+                <span class="stat-label">Items</span>
+            </div>
+            <div class="stat">
+                <span class="stat-value">{{ ds.n_interactions | fmt_number }}</span>
+                <span class="stat-label">Interactions</span>
+            </div>
+        </div>
+
+        <div class="card-meta">
+            <div class="sparsity-bar">
+                <div class="sparsity-fill" style="width: {{ (1 - ds.sparsity) * 100 * 500 }}%"></div>
+                <span class="sparsity-label">Density: {{ "%.6f" | format(ds.density) }}</span>
+            </div>
+        </div>
+
+        <div class="stakeholder-badges">
+            {% set roles = [('C', 'consumer', 'Consumer'), ('S', 'system', 'System'), ('P', 'provider', 'Provider'), ('U', 'upstream', 'Upstream'), ('D', 'downstream', 'Downstream'), ('T', 'third_party', 'Third Party')] %}
+            {% for abbr, key, label in roles %}
+            <span class="badge {% if ds.stakeholders.get(key) %}badge-active{% else %}badge-inactive{% endif %}"
+                  title="{{ label }}">{{ abbr }}</span>
+            {% endfor %}
+        </div>
+
+        <div class="card-footer">
+            <span class="feedback-type">{{ ds.feedback_type }}</span>
+            {% if ds.has_timestamp %}<span class="meta-tag">timestamps</span>{% endif %}
+            {% if ds.has_rating %}<span class="meta-tag">ratings</span>{% endif %}
+        </div>
+    </a>
+    {% endfor %}
+</div>
+{% endif %}
+{% endblock %}

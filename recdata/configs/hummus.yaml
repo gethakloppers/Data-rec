@@ -1,0 +1,99 @@
+dataset_name: hummus
+domain: healthcare_and_wellness
+source_url: https://gitlab.com/felix134/connected-recipe-data-set
+citation: |
+  @inproceedings{10.1145/3604915.3609491,
+  author = {B\"{o}lz, Felix and Nurbakova, Diana and Calabretto, Sylvie and Gerl, Armin and Brunie, Lionel and Kosch, Harald},
+  title = {HUMMUS: A Linked, Healthiness-Aware, User-centered and Argument-Enabling Recipe Data Set for Recommendation},
+  year = {2023},
+  publisher = {Association for Computing Machinery},
+  address = {New York, NY, USA},
+  url = {https://doi.org/10.1145/3604915.3609491},
+  doi = {10.1145/3604915.3609491},
+  booktitle = {17th ACM Conference on Recommender Systems},
+  pages = {1–11},
+  location = {Singapore, Singapore},
+  }
+
+stakeholder_roles:
+  consumer:
+    supported: true
+    id: [new_member_id]
+    features: [member_name, member_status, member_avg_rating, member_joined, follows_count, follow_me_count]
+  provider:
+    supported: true
+    id: [new_author_id]
+    features: []
+  upstream:
+    supported: false
+  downstream:
+    supported: false
+  system:
+    supported: true
+    features: [nutri_score, fsa_score, who_score]
+  third_party:
+    supported: false
+
+files:
+  interactions: pp_reviews.csv
+  items: pp_recipes.csv
+  users: pp_members.csv
+
+schema:
+  user_identifier: [new_member_id]
+  item_identifier: [new_recipe_id]
+  timestamp: []
+  rating: [rating]
+
+item_features:
+  object: [serves, last_changed_date, new_recipe_id, new_author_id, tags]
+  float: [duration, average_rating, number_of_ratings, servingsperrecipe, 'servingsize_[g]', 'calories_[cal]', 'caloriesfromfat_[cal]',
+    'totalfat_[g]', 'saturatedfat_[g]', 'cholesterol_[mg]', 'sodium_[mg]', 'totalcarbohydrate_[g]', 'dietaryfiber_[g]', 'sugars_[g]',
+    'protein_[g]', direction_size, ingredients_sizes, who_score, fsa_score, nutri_score]
+  text: [title, description, directions, food_kg_locator, recipe_url, ingredient_food_kg_urls]
+  misc: [ingredients, normalization_comment, ingredient_food_kg_names]
+  exclude: ['unnamed:_0', recipe_id, author_id]
+
+interaction_features:
+  object: [last_modified_date, new_member_id, new_recipe_id]
+  float: [rating, likes]
+  text: [text, review_url, member_url]
+  misc: []
+  exclude: ['unnamed:_0', member_id, recipe_id, review_id]
+
+user_features:
+  object: [member_status, member_joined, new_member_id]
+  float: [member_avg_rating, follows_count, follow_me_count]
+  text: [member_url, member_name, avatar_url]
+  misc: [member_description, member_map_pin]
+  exclude: ['unnamed:_0', member_id]
+
+other_features: null
+
+taxonomy:
+  interactions:
+    user_id: [new_member_id]
+    item_id: [new_recipe_id]
+    explicit_feedback: [rating, text]
+    implicit_feedback: []
+    timestamp: []
+    session_data: []
+    interaction_context: [likes, last_modified_date]
+    other: ['unnamed:_0', member_id, recipe_id, review_id, review_url, member_url]
+  items:
+    item_id: [new_recipe_id]
+    descriptive_features: [duration, ingredients, serves, last_changed_date, tags, average_rating, number_of_ratings, servingsperrecipe,
+      'servingsize_[g]', 'calories_[cal]', 'caloriesfromfat_[cal]', 'totalfat_[g]', 'saturatedfat_[g]', 'cholesterol_[mg]',
+      'sodium_[mg]', 'totalcarbohydrate_[g]', 'dietaryfiber_[g]', 'sugars_[g]', 'protein_[g]', direction_size, ingredients_sizes,
+      who_score, fsa_score, nutri_score]
+    content_features: [title, description, directions]
+    provider_upstream_info: [new_author_id]
+    other: ['unnamed:_0', recipe_id, author_id, food_kg_locator, recipe_url, normalization_comment, ingredient_food_kg_urls,
+      ingredient_food_kg_names]
+  users:
+    user_id: [new_member_id]
+    demographics: []
+    downstream_stakeholder_info: []
+    additional_attributes: [member_name, member_status, member_avg_rating, member_joined, follows_count, follow_me_count]
+    other: ['unnamed:_0', member_id, member_url, member_description, member_map_pin, avatar_url]
+  other: null

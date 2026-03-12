@@ -5,11 +5,14 @@ DataFrame with predictable column names and correct types.
 
 Key design decisions:
 - Column names are standardised for key roles only (user_id, item_id, timestamp,
-  rating). All other columns keep their original (lowercased) names.
+  rating). All other columns keep their original (lowercased, spaces→underscores)
+  names.
 - No ``__type`` suffixes are baked into column names. Feature type information
   lives in the profile metadata only.
 - Original user_id / item_id values are always cast to str — they are tokens,
   never numeric indices.
+- Columns typed ``datetime`` in the feature declarations are cast to
+  ``datetime64[ns]`` in *every* role, not just interactions.
 - No data is filtered or deduplicated. Null IDs are removed, but nothing else.
 """
 
@@ -42,14 +45,15 @@ def standardise_df(
     """Standardise a raw DataFrame using the provided dataset config.
 
     Applies the following transformations in order:
-    1. Lowercase all column names.
+    1. Lowercase all column names and replace spaces with underscores.
     2. Rename key columns (user_id, item_id, timestamp, rating) using the
        schema mapping in the config (first match wins, case-insensitive).
     3. Remove rows where user_id or item_id is null.
     4. Cast user_id and item_id to str (object dtype).
-    5. Cast timestamp column to datetime64[ns] (interactions only, if present).
+    4b. Cast all token-typed columns to str (categorical values must be strings).
+    5. Cast all datetime-typed columns to datetime64[ns] (all roles).
     6. Cast rating column to float32 (interactions only, if present).
-    7. Drop columns declared as 'drop' in the feature declarations.
+    7. Exclude columns declared as 'exclude' in the feature declarations.
 
     Args:
         df: The raw DataFrame to standardise. Not modified in place — a copy
@@ -69,6 +73,7 @@ def standardise_df(
             the DataFrame. All missing required columns are listed at once.
         ValueError: If ``df_role`` is not one of the accepted values.
     """
+    
     valid_roles = {"interactions", "items", "users"}
     if df_role not in valid_roles:
         raise ValueError(f"df_role must be one of {sorted(valid_roles)}, got '{df_role}'")
@@ -76,8 +81,8 @@ def standardise_df(
     warnings: list[str] = []
     df = df.copy()
 
-    # ── Step 1: Lowercase all column names ──────────────────────────────────
-    df.columns = [str(c).lower() for c in df.columns]
+    # ── Step 1: Lowercase all column names + replace spaces with underscores ─
+    df.columns = [str(c).lower().replace(" ", "_") for c in df.columns]
     logger.debug("[%s] Lowercased %d column names.", df_role, len(df.columns))
 
     # ── Step 2: Rename key columns via schema mapping ────────────────────────
@@ -94,17 +99,43 @@ def standardise_df(
             df[col] = df[col].astype(str)
             logger.debug("[%s] Cast '%s' to str.", df_role, col)
 
-    # ── Step 5 & 6: Type casts for interactions only ──────────────────────────
+    # ── Step 4b: Cast all object-typed columns to string ──────────────────────
+    #   Columns declared as 'object' (categorical) must be stored as str, even
+    #   when the raw data has them as integers (e.g. regionid, wineryid).
+    feature_map = get_feature_map(config, df_role)
+    object_cols = [
+        col_name for col_name, feat_type in feature_map.items()
+        if feat_type == "object" and col_name in df.columns
+    ]
+    for col in object_cols:
+        if df[col].dtype != object:
+            df[col] = df[col].astype(str)
+            logger.debug("[%s] Cast object column '%s' to str.", df_role, col)
+
+    # ── Step 5: Cast ALL datetime-typed columns to datetime64[ns] ───────────
+    #   Applies to every role, not just interactions. Uses the feature map to
+    #   find columns declared as 'datetime', plus the schema timestamp column
+    #   if it was matched.
+    datetime_cols: set[str] = set()
+    for col_name, feat_type in feature_map.items():
+        if feat_type == "datetime" and col_name in df.columns:
+            datetime_cols.add(col_name)
+    # Also include the standard timestamp column if present
+    if STANDARD_TIMESTAMP_COL in df.columns:
+        datetime_cols.add(STANDARD_TIMESTAMP_COL)
+
+    for dt_col in sorted(datetime_cols):
+        df, ts_warnings = _cast_timestamp_column(df, dt_col, df_role)
+        warnings.extend(ts_warnings)
+
+    # ── Step 5b: Cast rating to float32 (interactions only) ──────────────────
     if df_role == "interactions":
-        if STANDARD_TIMESTAMP_COL in df.columns:
-            df, ts_warnings = _cast_timestamp(df)
-            warnings.extend(ts_warnings)
         if STANDARD_RATING_COL in df.columns:
             df = _cast_rating(df)
 
-    # ── Step 7: Drop declared 'drop' columns ─────────────────────────────────
-    df, drop_warnings = _drop_declared_columns(df, config, df_role)
-    warnings.extend(drop_warnings)
+    # ── Step 7: Remove columns declared as 'exclude' (or legacy 'drop') ─────
+    df, exclude_warnings = _exclude_declared_columns(df, config, df_role)
+    warnings.extend(exclude_warnings)
 
     n_rows, n_cols = df.shape
     logger.info(
@@ -301,10 +332,12 @@ def _remove_null_ids(
     return df, warnings
 
 
-def _cast_timestamp(
+def _cast_timestamp_column(
     df: pd.DataFrame,
+    col: str,
+    df_role: str,
 ) -> tuple[pd.DataFrame, list[str]]:
-    """Cast the timestamp column to datetime64[ns].
+    """Cast a column to datetime64[ns].
 
     If the column is numeric, the unit is inferred from the median value using
     a log10 heuristic:
@@ -314,13 +347,14 @@ def _cast_timestamp(
         - otherwise      → nanoseconds
 
     Args:
-        df: DataFrame containing a ``timestamp`` column.
+        df: DataFrame containing the target column.
+        col: Name of the column to cast.
+        df_role: Role label for log messages.
 
     Returns:
-        Tuple of (df_with_cast_timestamp, warnings).
+        Tuple of (df_with_cast_column, warnings).
     """
     warnings: list[str] = []
-    col = STANDARD_TIMESTAMP_COL
 
     series = df[col]
 
@@ -350,7 +384,7 @@ def _cast_timestamp(
             else:
                 unit = "ns"
 
-        msg = f"[interactions] Detected numeric timestamp unit: '{unit}' (median={median_val:.0f})."
+        msg = f"[{df_role}] Detected numeric datetime unit for '{col}': '{unit}' (median={median_val:.0f})."
         logger.info(msg)
         warnings.append(msg)
 
@@ -362,8 +396,8 @@ def _cast_timestamp(
     n_failed = df[col].isna().sum()
     if n_failed > 0:
         msg = (
-            f"[interactions] {n_failed:,} timestamp values could not be parsed "
-            f"and were set to NaT ({n_failed / n_total:.1%} of rows)."
+            f"[{df_role}] {n_failed:,} values in '{col}' could not be parsed "
+            f"as datetime and were set to NaT ({n_failed / n_total:.1%} of rows)."
         )
         warnings.append(msg)
         logger.warning(msg)
@@ -389,12 +423,12 @@ def _cast_rating(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
-def _drop_declared_columns(
+def _exclude_declared_columns(
     df: pd.DataFrame,
     config: dict[str, Any],
     df_role: str,
 ) -> tuple[pd.DataFrame, list[str]]:
-    """Drop columns declared as 'drop' in the config's feature declarations.
+    """Remove columns declared as 'exclude' (or legacy 'drop') in the config.
 
     Args:
         df: The (post-rename, post-cast) DataFrame.
@@ -402,24 +436,27 @@ def _drop_declared_columns(
         df_role: 'interactions', 'items', or 'users'.
 
     Returns:
-        Tuple of (df_without_dropped_cols, warnings).
+        Tuple of (df_without_excluded_cols, warnings).
     """
     warnings: list[str] = []
     feature_map = get_feature_map(config, df_role)
 
-    # Collect lowercased column names marked for dropping
-    drop_cols = [col for col, ftype in feature_map.items() if ftype == "drop"]
+    # Collect columns marked for exclusion (accept both 'exclude' and legacy 'drop')
+    exclude_cols = [
+        col for col, ftype in feature_map.items()
+        if ftype in ("exclude", "drop")
+    ]
 
-    if not drop_cols:
+    if not exclude_cols:
         return df, warnings
 
-    # Only drop columns that actually exist (some may be absent in this dataset)
-    cols_present = [c for c in drop_cols if c in df.columns]
-    cols_absent = [c for c in drop_cols if c not in df.columns]
+    # Only exclude columns that actually exist (some may be absent in this dataset)
+    cols_present = [c for c in exclude_cols if c in df.columns]
+    cols_absent = [c for c in exclude_cols if c not in df.columns]
 
     if cols_absent:
         msg = (
-            f"[{df_role}] Declared 'drop' columns not found (will be ignored): "
+            f"[{df_role}] Declared 'exclude' columns not found (will be ignored): "
             f"{cols_absent}."
         )
         warnings.append(msg)
@@ -428,7 +465,7 @@ def _drop_declared_columns(
     if cols_present:
         df = df.drop(columns=cols_present)
         logger.info(
-            "[%s] Dropped %d declared columns: %s.", df_role, len(cols_present), cols_present
+            "[%s] Excluded %d declared columns: %s.", df_role, len(cols_present), cols_present
         )
 
     return df, warnings
@@ -476,9 +513,9 @@ def describe_standardisation_plan(
         "warnings": [],
     }
 
-    # Work on lowercased column names only
-    lowered_cols = [str(c).lower() for c in df.columns]
-    col_dtype_map = {str(c).lower(): str(df[c].dtype) for c in df.columns}
+    # Work on lowercased column names only (spaces → underscores)
+    lowered_cols = [str(c).lower().replace(" ", "_") for c in df.columns]
+    col_dtype_map = {str(c).lower().replace(" ", "_"): str(df[c].dtype) for c in df.columns}
 
     schema = config.get("schema", {})
 
@@ -590,14 +627,17 @@ def describe_standardisation_plan(
                  "to_dtype": "float32"}
             )
 
-    # Simulate drop step
+    # Simulate exclude step
     feature_map = get_feature_map(config, df_role)
-    drop_cols_declared = [col for col, ftype in feature_map.items() if ftype == "drop"]
-    drop_cols_present = [c for c in drop_cols_declared if c in renamed_cols]
-    plan["drop_columns"] = drop_cols_present
+    exclude_cols_declared = [
+        col for col, ftype in feature_map.items()
+        if ftype in ("exclude", "drop")
+    ]
+    exclude_cols_present = [c for c in exclude_cols_declared if c in renamed_cols]
+    plan["drop_columns"] = exclude_cols_present  # key kept for CLI compat
 
     # Compute final output columns
-    output_cols = [c for c in renamed_cols if c not in drop_cols_present]
+    output_cols = [c for c in renamed_cols if c not in exclude_cols_present]
     plan["output_columns"] = output_cols
 
     return plan

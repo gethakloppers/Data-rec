@@ -62,14 +62,13 @@ const _NAME_HINTS = [
 // Type labels for display
 const TYPE_LABELS = {
   float: "Numerical",
-  token: "Categorical",
-  token_seq: "Cat. list",
+  object: "Object",
   text: "Free text",
   datetime: "Datetime",
   boolean: "Boolean",
   url: "URL",
   misc: "Misc",
-  drop: "Exclude",
+  exclude: "Exclude",
 };
 
 
@@ -329,7 +328,7 @@ function configApp(defaultPath, outputPath) {
         for (const col of data.columns) {
           const suggestedType = data.suggested_types[col] || "";
           const suggestedSep = data.suggested_separators[col] || "|";
-          const suggestedSchema = suggestedType !== "drop"
+          const suggestedSchema = suggestedType !== "exclude"
             ? this._autoSchemaCategory(col, suggestedType, role)
             : "";
 
@@ -383,7 +382,7 @@ function configApp(defaultPath, outputPath) {
      */
     autoUpdateSchema(col) {
       const cfg = this.getColumnConfig(col);
-      if (cfg.type === "drop") {
+      if (cfg.type === "exclude") {
         cfg.schema = "";
         return;
       }
@@ -593,7 +592,7 @@ function configApp(defaultPath, outputPath) {
         if (!preview) continue;
         for (const col of preview.columns) {
           const cfg = configs[col] || {};
-          if (cfg.type === "drop") continue;
+          if (cfg.type === "exclude") continue;
           if (!seen.has(col)) {
             seen.add(col);
             cols.push({ name: col, type: cfg.type || "", role: af.role, filename: af.filename });
@@ -650,9 +649,9 @@ function configApp(defaultPath, outputPath) {
           parts: [],
         };
 
-        // Detect list values
-        if (cfg.type === "token_seq") {
-          const sep = cfg.separator || "|";
+        // Detect list values: object columns with a separator set
+        if (cfg.type === "object" && cfg.separator) {
+          const sep = cfg.separator;
           if (str.includes(sep)) {
             sample.isList = true;
             sample.parts = str.split(sep).map((p) => p.trim()).filter(Boolean).slice(0, 5);
@@ -680,13 +679,13 @@ function configApp(defaultPath, outputPath) {
       const cfg = this.getColumnConfig(col);
       const t = cfg.type;
       if (t === "float") return "row-float";
-      if (t === "token" || t === "token_seq") return "row-token";
+      if (t === "object") return "row-token";
       if (t === "text") return "row-text";
       if (t === "datetime") return "row-datetime";
       if (t === "boolean") return "row-boolean";
       if (t === "url") return "row-url";
       if (t === "misc") return "row-misc";
-      if (t === "drop") return "row-drop";
+      if (t === "exclude") return "row-drop";
       return "";
     },
 

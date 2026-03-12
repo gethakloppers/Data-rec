@@ -49,24 +49,25 @@ schema:
   rating: [rating]
 
 item_features:
-  token: [wineid, type, elaborate, grapes, body, acidity, code, regionid, wineryid]
+  object: [wineid, type, elaborate, grapes, body, acidity, code, regionid, wineryid, harmonize, vintages]
   float: [abv]
-  token_seq: [harmonize, vintages]
   text: [winename, country, regionname, wineryname, website]
   misc: []
-  drop: []
+  exclude: []
 
 interaction_features:
-  token: [userid, wineid, vintage, date]
+  object: [userid, wineid, vintage, date]
   float: [rating]
-  token_seq: []
   text: []
   misc: []
-  drop: [ratingid]
+  exclude: [ratingid]
 
 user_features: null
 
 other_features: null
+
+
+
 
 taxonomy:
   interactions:

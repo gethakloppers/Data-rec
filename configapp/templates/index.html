@@ -208,18 +208,17 @@
                             @change="autoUpdateSchema(col)">
                       <option value="">— Select —</option>
                       <option value="float">Numerical</option>
-                      <option value="token">Categorical</option>
-                      <option value="token_seq">Categorical list</option>
+                      <option value="object">Object</option>
                       <option value="text">Free text</option>
                       <option value="datetime">Datetime</option>
                       <option value="boolean">Boolean</option>
                       <option value="url">URL</option>
                       <option value="misc">Misc</option>
-                      <option value="drop">Exclude</option>
+                      <option value="exclude">Exclude</option>
                     </select>
                   </td>
                   <td>
-                    <template x-if="getColumnConfig(col).type === 'token_seq'">
+                    <template x-if="getColumnConfig(col).type === 'object'">
                       <select x-model="getColumnConfig(col).separator" class="sep-select">
                         <option value="|">|</option>
                         <option value=",">,</option>
@@ -294,7 +293,7 @@
                   <template x-if="sk !== 'consumer'">
                     <select x-model="stakeholderConfig[sk].id_column" class="role-select">
                       <option value="">— Select —</option>
-                      <template x-for="c in allAvailableColumns.filter(c => c.type === 'token' || c.type === 'token_seq')" :key="c.name">
+                      <template x-for="c in allAvailableColumns.filter(c => c.type === 'object')" :key="c.name">
                         <option :value="c.name" x-text="c.name + ' (' + c.role + ')'"></option>
                       </template>
                     </select>

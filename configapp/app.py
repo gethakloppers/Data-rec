@@ -43,7 +43,7 @@ app.config["OUTPUT_PATH"] = os.environ.get("OUTPUT_PATH", "")
 
 # File extensions we consider as potential data files
 _DATA_EXTENSIONS = {
-    ".csv", ".tsv", ".json", ".jsonl", ".ndjson",
+    ".csv", ".tsv", ".dat", ".json", ".jsonl", ".ndjson",
     ".parquet", ".gz", ".zip", ".tar", ".tgz",
     ".tar.gz", ".tar.bz2", ".tar.xz",
 }
@@ -281,8 +281,8 @@ def _suggest_type(
         3. Already datetime64 → datetime
         4. String-based: boolean → datetime → url → token_seq → text → token
 
-    Returns one of: ``'float'``, ``'token'``, ``'token_seq'``, ``'text'``,
-    ``'datetime'``, ``'boolean'``, ``'url'``, ``'misc'``, ``'drop'``, or
+    Returns one of: ``'float'``, ``'object'``, ``'text'``,
+    ``'datetime'``, ``'boolean'``, ``'url'``, ``'misc'``, ``'exclude'``, or
     ``''`` (unset).
     """
     import pandas as pd
@@ -329,14 +329,14 @@ def _suggest_type(
         if _looks_like_url(str_vals, col_lower):
             return "url"
 
-        # 4d. Delimiter-separated list → token_seq
+        # 4d. Delimiter-separated list → object (with separator recorded)
         for sep in ["|", ";", ","]:
             has_sep = str_vals.str.contains(sep, regex=False)
             if has_sep.mean() > 0.5:
                 if sep == "," and _looks_numeric_with_comma(str_vals):
                     continue
                 separators[col] = sep
-                return "token_seq"
+                return "object"
 
         # 4e. Long strings → text
         lengths = str_vals.str.len()
@@ -344,11 +344,11 @@ def _suggest_type(
         if median_len > 50:
             return "text"
 
-        # 4f. Low cardinality → token (categorical)
+        # 4f. Low cardinality → object (categorical)
         nunique = series.nunique()
         ratio = nunique / len(series) if len(series) > 0 else 1.0
         if ratio < 0.5:
-            return "token"
+            return "object"
 
         # 4g. Try datetime parse without name hint (higher threshold)
         parsed = pd.to_datetime(str_vals, errors="coerce", format="mixed")
@@ -477,24 +477,30 @@ _CustomDumper.add_representer(OrderedDict, _ordered_dict_representer)
 # Wizard type → YAML feature type mapping
 _WIZARD_TO_YAML_TYPE: dict[str, str | None] = {
     "float": "float",
-    "token": "token",
-    "token_seq": "token_seq",
+    "object": "object",
     "text": "text",
-    "drop": "drop",
-    "datetime": "token",   # standalone datetimes become categorical
-    "boolean": "token",    # booleans become categorical
+    "exclude": "exclude",
+    "datetime": "datetime",
+    "boolean": "object",   # booleans become categorical object
     "url": "text",         # URLs stored as text
     "misc": "misc",        # misc retained as its own type
+    # Legacy wizard types (kept for backward compat with in-flight sessions)
+    "token": "object",
+    "token_seq": "object",
 }
 
 # YAML feature type → Wizard type (reverse mapping for loading configs)
 _YAML_TO_WIZARD_TYPE: dict[str, str] = {
-    "token": "token",
+    "object": "object",
     "float": "float",
-    "token_seq": "token_seq",
     "text": "text",
+    "datetime": "datetime",
     "misc": "misc",
-    "drop": "drop",
+    "exclude": "exclude",
+    # Legacy YAML types
+    "token": "object",
+    "token_seq": "object",
+    "drop": "exclude",
 }
 
 # Schema categories handled by the schema section (excluded from features)
@@ -708,8 +714,8 @@ def _parse_yaml_to_wizard_state(config_path: Path) -> dict:
     schema = config.get("schema", {}) or {}
     schema_columns: dict[str, dict] = {}
     _SCHEMA_FIELD_MAP = {
-        "user_identifier": {"type": "token", "schema": "user_id"},
-        "item_identifier": {"type": "token", "schema": "item_id"},
+        "user_identifier": {"type": "object", "schema": "user_id"},
+        "item_identifier": {"type": "object", "schema": "item_id"},
         "timestamp":       {"type": "datetime", "schema": "timestamp"},
         "rating":          {"type": "float", "schema": "explicit_feedback"},
     }
@@ -933,7 +939,7 @@ def _build_yaml_config(data: dict) -> str:
             continue
 
         features: OrderedDict = OrderedDict()
-        for yaml_type in ("token", "float", "token_seq", "text", "misc", "drop"):
+        for yaml_type in ("object", "float", "text", "datetime", "misc", "exclude"):
             features[yaml_type] = []
 
         for tab_key in role_tabs:

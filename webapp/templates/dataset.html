@@ -1,0 +1,362 @@
+{% extends "base.html" %}
+{% block title %}{{ profile.dataset_name }} — RecData{% endblock %}
+
+{% block head %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.14.3/dist/cdn.min.js"></script>
+{% endblock %}
+
+{% block content %}
+<nav class="breadcrumb">
+    <a href="/">Catalogue</a> <span class="sep">/</span> <span>{{ profile.dataset_name }}</span>
+</nav>
+
+{# ── Section A: Overview ─────────────────────────────────────────── #}
+<section class="section" id="overview">
+    <div class="overview-header">
+        <h1>{{ profile.dataset_name }}</h1>
+        {% if profile.domain %}
+        <span class="domain-badge domain-badge-lg">{{ profile.domain | domain_label }}</span>
+        {% endif %}
+    </div>
+
+    <div class="overview-meta">
+        {% if profile.version %}<span><strong>Version:</strong> {{ profile.version }}</span>{% endif %}
+        {% if profile.source_url %}<span><strong>Source:</strong> <a href="{{ profile.source_url }}" target="_blank" rel="noopener">{{ profile.source_url }}</a></span>{% endif %}
+        {% if profile.processed_at %}<span><strong>Processed:</strong> {{ profile.processed_at[:10] }}</span>{% endif %}
+    </div>
+
+    {% if profile.description %}
+    <p class="description">{{ profile.description }}</p>
+    {% endif %}
+
+    {% set counts = profile.counts or {} %}
+    {% set interactions = profile.interactions or {} %}
+    <div class="stat-cards">
+        <div class="stat-card">
+            <span class="stat-card-value">{{ counts.n_users | fmt_number }}</span>
+            <span class="stat-card-label">Users</span>
+        </div>
+        <div class="stat-card">
+            <span class="stat-card-value">{{ counts.n_items | fmt_number }}</span>
+            <span class="stat-card-label">Items</span>
+        </div>
+        <div class="stat-card">
+            <span class="stat-card-value">{{ counts.n_interactions | fmt_number }}</span>
+            <span class="stat-card-label">Interactions</span>
+        </div>
+        <div class="stat-card">
+            <span class="stat-card-value">{{ "%.4f" | format(counts.sparsity or 0) }}</span>
+            <span class="stat-card-label">Sparsity</span>
+        </div>
+        {% if interactions.has_rating and interactions.rating_scale %}
+        <div class="stat-card">
+            <span class="stat-card-value">{{ interactions.rating_scale.min }} &ndash; {{ interactions.rating_scale.max }}</span>
+            <span class="stat-card-label">Rating Range</span>
+        </div>
+        {% endif %}
+        {% if interactions.has_timestamp and interactions.timestamp_range %}
+        <div class="stat-card stat-card-wide">
+            <span class="stat-card-value">{{ interactions.timestamp_range.earliest[:10] }} &rarr; {{ interactions.timestamp_range.latest[:10] }}</span>
+            <span class="stat-card-label">Time Span</span>
+        </div>
+        {% endif %}
+    </div>
+</section>
+
+{# ── Section B: Stakeholder Representation ────────────────────── #}
+<section class="section" id="stakeholders">
+    <h2>Stakeholder Representation</h2>
+    {% set support = profile.stakeholder_support or {} %}
+    <div class="stakeholder-grid">
+        {% set role_icons = {'consumer': 'U', 'system': 'S', 'provider': 'P', 'upstream': 'Up', 'downstream': 'Dn', 'third_party': 'T'} %}
+        {% for role in ['consumer', 'system', 'provider', 'upstream', 'downstream', 'third_party'] %}
+        {% set info = support.get(role, {}) %}
+        <div class="stakeholder-card {% if info.supported %}stakeholder-supported{% else %}stakeholder-unsupported{% endif %}">
+            <div class="stakeholder-icon">{{ role_icons[role] }}</div>
+            <div class="stakeholder-name">{{ role | replace('_', ' ') | title }}</div>
+            <div class="stakeholder-status">{% if info.supported %}Supported{% else %}Not Supported{% endif %}</div>
+            {% if info.basis %}
+            <div class="stakeholder-basis">{{ info.basis }}</div>
+            {% endif %}
+        </div>
+        {% endfor %}
+    </div>
+</section>
+
+{# ── Section C: Data Taxonomy ─────────────────────────────────── #}
+<section class="section" id="taxonomy">
+    <h2>Data Taxonomy</h2>
+    {% set taxonomy = profile.taxonomy or {} %}
+
+    {% set tax_groups = [
+        ('Users', 'users', [('Identifiers', 'identifiers'), ('Demographics', 'demographics'), ('Additional Attributes', 'additional_attributes')]),
+        ('Items', 'items', [('Identifiers', 'identifiers'), ('Descriptive Features', 'descriptive_features'), ('Content Features', 'content_features'), ('Provider Information', 'provider_information')]),
+        ('Interactions', 'interactions', [('Explicit Feedback', 'explicit_feedback'), ('Implicit Feedback', 'implicit_feedback'), ('Timestamp', 'timestamp'), ('Contextual Features', 'contextual_features'), ('Session Data', 'session_data')]),
+        ('Secondary', 'secondary', [('System Data', 'system_data'), ('Feedback & Control', 'feedback_and_control'), ('External Knowledge', 'external_knowledge')])
+    ] %}
+
+    <div class="taxonomy-table-wrap">
+        <table class="data-table taxonomy-table">
+            <thead>
+                <tr>
+                    <th>Category</th>
+                    <th>Element</th>
+                    <th>Present</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for group_label, group_key, elements in tax_groups %}
+                {% set group_data = taxonomy.get(group_key, {}) %}
+                {% for elem_label, elem_key in elements %}
+                <tr>
+                    {% if loop.first %}
+                    <td class="group-cell" rowspan="{{ elements | length }}">{{ group_label }}</td>
+                    {% endif %}
+                    <td>{{ elem_label }}</td>
+                    <td class="presence-cell">
+                        {% if group_data.get(elem_key) %}
+                        <span class="presence-yes" title="Present">&#10003;</span>
+                        {% else %}
+                        <span class="presence-no" title="Not present">&#10007;</span>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</section>
+
+{# ── Section D: Column Explorer ───────────────────────────────── #}
+<section class="section" id="columns" x-data="{ activeTab: 'interactions' }">
+    <h2>Column Explorer</h2>
+
+    {% set columns = profile.columns or {} %}
+    <div class="tab-bar">
+        {% for role in ['interactions', 'items', 'users'] %}
+        {% if columns.get(role) %}
+        <button class="tab-btn" :class="{ 'tab-active': activeTab === '{{ role }}' }"
+                @click="activeTab = '{{ role }}'">
+            {{ role | title }}
+            <span class="tab-count">{{ columns[role] | length }}</span>
+        </button>
+        {% endif %}
+        {% endfor %}
+    </div>
+
+    {% for role in ['interactions', 'items', 'users'] %}
+    {% if columns.get(role) %}
+    <div x-show="activeTab === '{{ role }}'" x-cloak>
+        <table class="data-table column-table">
+            <thead>
+                <tr>
+                    <th>Column</th>
+                    <th>Feature Type</th>
+                    <th>Dtype</th>
+                    <th>Null %</th>
+                    <th>Unique</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for col in columns[role] %}
+                <tr class="col-row col-type-{{ col.feature_type or 'other' }}">
+                    <td class="col-name">
+                        {{ col.name }}
+                        {% if col.is_list_column %}<span class="list-indicator" title="Contains list values">[]</span>{% endif %}
+                    </td>
+                    <td><span class="type-badge type-{{ col.feature_type or 'other' }}">{{ col.feature_type or '—' }}</span></td>
+                    <td class="mono">{{ col.dtype }}</td>
+                    <td>
+                        <div class="null-bar-cell">
+                            <div class="null-bar">
+                                <div class="null-fill" style="width: {{ col.null_pct }}%"></div>
+                            </div>
+                            <span>{{ "%.1f" | format(col.null_pct) }}%</span>
+                        </div>
+                    </td>
+                    <td class="mono">{{ col.n_unique | fmt_number }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% endif %}
+    {% endfor %}
+
+    <div class="type-legend">
+        <span class="legend-item"><span class="type-dot type-id"></span> ID</span>
+        <span class="legend-item"><span class="type-dot type-timestamp"></span> Timestamp</span>
+        <span class="legend-item"><span class="type-dot type-rating"></span> Rating</span>
+        <span class="legend-item"><span class="type-dot type-float"></span> Float</span>
+        <span class="legend-item"><span class="type-dot type-object"></span> Object</span>
+        <span class="legend-item"><span class="type-dot type-text"></span> Text</span>
+    </div>
+</section>
+
+{# ── Section E: Distribution Statistics ───────────────────────── #}
+{% set dists = profile.distributions or {} %}
+{% if dists %}
+<section class="section" id="distributions">
+    <h2>Distribution Statistics</h2>
+
+    <div class="dist-grid">
+        {% set user_dist = dists.get('user_interaction_counts', {}) %}
+        {% set item_dist = dists.get('item_interaction_counts', {}) %}
+
+        {% if user_dist %}
+        <div class="dist-card">
+            <h3>User Interactions per User</h3>
+            <table class="data-table compact-table">
+                <tbody>
+                    {% for stat in ['min', 'p25', 'median', 'mean', 'p75', 'p95', 'max', 'std'] %}
+                    {% if user_dist.get(stat) is not none %}
+                    <tr>
+                        <td class="stat-name">{{ stat | upper }}</td>
+                        <td class="stat-val mono">{{ user_dist[stat] | fmt_number }}</td>
+                    </tr>
+                    {% endif %}
+                    {% endfor %}
+                </tbody>
+            </table>
+            <div class="chart-container"><canvas id="chart-user-dist"></canvas></div>
+        </div>
+        {% endif %}
+
+        {% if item_dist %}
+        <div class="dist-card">
+            <h3>Item Interactions per Item</h3>
+            <table class="data-table compact-table">
+                <tbody>
+                    {% for stat in ['min', 'p25', 'median', 'mean', 'p75', 'p95', 'max', 'std'] %}
+                    {% if item_dist.get(stat) is not none %}
+                    <tr>
+                        <td class="stat-name">{{ stat | upper }}</td>
+                        <td class="stat-val mono">{{ item_dist[stat] | fmt_number }}</td>
+                    </tr>
+                    {% endif %}
+                    {% endfor %}
+                </tbody>
+            </table>
+            <div class="chart-container"><canvas id="chart-item-dist"></canvas></div>
+        </div>
+        {% endif %}
+    </div>
+
+    {% if dists.long_tail_ratio is not none or dists.power_user_ratio is not none %}
+    <div class="dist-extras">
+        {% if dists.long_tail_ratio is not none %}
+        <div class="dist-metric">
+            <span class="dist-metric-value">{{ "%.1f" | format(dists.long_tail_ratio * 100) }}%</span>
+            <span class="dist-metric-label">Long-tail ratio<br><small>Items with &lt; 5 interactions</small></span>
+        </div>
+        {% endif %}
+        {% if dists.power_user_ratio is not none %}
+        <div class="dist-metric">
+            <span class="dist-metric-value">{{ "%.1f" | format(dists.power_user_ratio * 100) }}%</span>
+            <span class="dist-metric-label">Power-user ratio<br><small>Users with &gt; 50 interactions</small></span>
+        </div>
+        {% endif %}
+    </div>
+    {% endif %}
+</section>
+{% endif %}
+
+{# ── Section F: Download ──────────────────────────────────────── #}
+{% if summary %}
+<section class="section" id="download">
+    <h2>Download</h2>
+    <div class="download-card">
+        <div class="download-info">
+            <p><strong>Standardised dataset</strong> &mdash; {{ summary.parquet_files | length }} Parquet file{{ 's' if summary.parquet_files | length != 1 }}
+            {% for pf in summary.parquet_files %}
+                <span class="file-chip">{{ pf.name }} ({{ pf.size_mb }} MB)</span>
+            {% endfor %}
+            </p>
+            <p class="download-note">Downloads the standardised, processed dataset plus profile JSON and report. Raw data is not included.</p>
+            <p class="download-size">Total: ~{{ summary.total_size_mb }} MB</p>
+        </div>
+        <a href="/download/{{ name }}" class="download-btn">Download ZIP</a>
+    </div>
+</section>
+{% endif %}
+
+{# ── Warnings ─────────────────────────────────────────────────── #}
+{% set warnings = profile.warnings or [] %}
+{% if warnings %}
+<section class="section" id="warnings">
+    <h2>Processing Warnings</h2>
+    <ul class="warning-list">
+        {% for w in warnings %}
+        <li>{{ w }}</li>
+        {% endfor %}
+    </ul>
+</section>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+// Distribution charts
+document.addEventListener('DOMContentLoaded', function() {
+    const profile = {{ profile | tojson }};
+    const dists = profile.distributions || {};
+
+    function renderBoxChart(canvasId, stats) {
+        const canvas = document.getElementById(canvasId);
+        if (!canvas || !stats) return;
+
+        const labels = ['MIN', 'P25', 'MEDIAN', 'MEAN', 'P75', 'P95', 'MAX'];
+        const keys = ['min', 'p25', 'median', 'mean', 'p75', 'p95', 'max'];
+        const values = keys.map(k => stats[k] || 0);
+
+        new Chart(canvas, {
+            type: 'bar',
+            data: {
+                labels: labels,
+                datasets: [{
+                    data: values,
+                    backgroundColor: [
+                        '#94a3b8', '#64748b', '#2563eb', '#f59e0b',
+                        '#64748b', '#64748b', '#94a3b8'
+                    ],
+                    borderRadius: 3,
+                    barPercentage: 0.7,
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: { display: false },
+                    tooltip: {
+                        callbacks: {
+                            label: ctx => ctx.parsed.y.toLocaleString()
+                        }
+                    }
+                },
+                scales: {
+                    y: {
+                        type: 'logarithmic',
+                        beginAtZero: false,
+                        ticks: {
+                            callback: v => v.toLocaleString(),
+                            font: { family: 'JetBrains Mono', size: 11 }
+                        },
+                        grid: { color: '#e2e8f0' }
+                    },
+                    x: {
+                        ticks: { font: { family: 'JetBrains Mono', size: 11 } },
+                        grid: { display: false }
+                    }
+                }
+            }
+        });
+    }
+
+    renderBoxChart('chart-user-dist', dists.user_interaction_counts);
+    renderBoxChart('chart-item-dist', dists.item_interaction_counts);
+});
+</script>
+{% endblock %}

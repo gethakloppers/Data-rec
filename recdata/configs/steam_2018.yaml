@@ -2,9 +2,9 @@ dataset_name: steam
 domain: media_and_entertainment
 version: '2018'
 source_url: https://github.com/kang205/SASRec
-citation: "@misc{Steam,\n      title={Self-Attentive Sequential Recommendation}, \n      author={Wang-Cheng Kang and Julian\
-  \ McAuley},\n      year={2018},\n      eprint={1808.09781},\n      archivePrefix={arXiv},\n      url={https://arxiv.org/abs/1808.09781},\
-  \ \n}\n"
+citation: "@misc{steam,\n     title={Self-Attentive Sequential Recommendation}, \n    author={Wang-Cheng Kang and Julian McAuley},\n\
+  \    year={2018},      \n    eprint={1808.09781},      \n    archivePrefix={arXiv},      \n    url={https://arxiv.org/abs/1808.09781},\n\
+  \    }\n"
 
 stakeholder_roles:
   consumer:
@@ -22,8 +22,7 @@ stakeholder_roles:
   downstream:
     supported: false
   system:
-    supported: true
-    features: [price, discount_price]
+    supported: false
   third_party:
     supported: false
 
@@ -35,37 +34,37 @@ files:
 schema:
   user_identifier: [user_id]
   item_identifier: [id, product_id]
-  timestamp: [date]
+  timestamp: []
   rating: []
 
 item_features:
-  token: [publisher, release_date, early_access, sentiment]
+  object: [publisher, release_date, early_access, id, sentiment, genres, tags, specs]
   float: [discount_price, price]
-  token_seq: [genres, tags, specs]
   text: [app_name, title, url, reviews_url, developer]
   misc: []
-  drop: [metascore]
+  exclude: [metascore]
 
 interaction_features:
-  token: [page_order, early_access, page]
-  float: [hours, products, found_funny]
-  token_seq: []
-  text: [text]
-  misc: [compensation]
-  drop: [username]
+  object: [product_id, page_order, date, early_access, page, found_funny, compensation, user_id]
+  float: [hours, products]
+  text: [username, text]
+  misc: []
+  exclude: []
 
 user_features: null
+
+other_features: null
 
 taxonomy:
   interactions:
     user_id: [user_id]
     item_id: [product_id]
-    explicit_feedback: [text]
+    explicit_feedback: [username, text]
     implicit_feedback: []
-    timestamp: [date]
+    timestamp: []
     session_data: []
-    interaction_context: [hours, products, page_order, early_access, page, found_funny, compensation]
-    other: [username]
+    interaction_context: [hours, products, page_order, date, early_access, page, found_funny, compensation]
+    other: []
   items:
     item_id: [id]
     descriptive_features: [genres, release_date, tags, discount_price, specs, price, early_access, sentiment]
@@ -73,3 +72,4 @@ taxonomy:
     provider_upstream_info: [publisher, developer]
     other: [url, reviews_url, metascore]
   users: null
+  other: null

@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "webapp",
+      "runtimeExecutable": "/opt/anaconda3/envs/msquared/bin/python",
+      "runtimeArgs": ["webapp/app.py", "--output-dir", "/tmp/recdata_pipeline_test", "--port", "5001", "--debug"],
+      "port": 5001
+    }
+  ]
+}

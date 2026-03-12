@@ -33,6 +33,7 @@ logger = logging.getLogger(__name__)
 _EXT_TO_FORMAT: dict[str, str] = {
     ".csv": "csv",
     ".tsv": "tsv",
+    ".dat": "csv",      # Delimiter-separated (auto-detect separator, incl. ::)
     ".jsonl": "jsonl",
     ".ndjson": "jsonl",
     ".parquet": "parquet",
@@ -122,6 +123,19 @@ def detect_encoding(filepath: str | Path) -> str:
                 # correctly instead of raising UnicodeDecodeError.
                 if enc.lower() in ("ascii", "us-ascii"):
                     enc = "utf-8"
+                # Validate: if the detector says UTF-8 but the sample
+                # contains bytes that fail to decode as UTF-8, fall back
+                # to latin-1 which accepts every byte value.
+                if enc.lower() == "utf-8":
+                    try:
+                        raw.decode("utf-8")
+                    except UnicodeDecodeError:
+                        enc = "latin-1"
+                        logger.debug(
+                            "UTF-8 validation failed for '%s'; "
+                            "falling back to latin-1",
+                            path.name,
+                        )
                 logger.debug(
                     "Detected encoding for '%s': %s (confidence %.0f%%)",
                     path.name, enc, confidence * 100,
@@ -129,6 +143,21 @@ def detect_encoding(filepath: str | Path) -> str:
                 return enc
         except Exception:
             pass  # Fall through to default
+
+    # No detector available (or it returned nothing).  Still validate that
+    # the file actually decodes as UTF-8 before assuming it; otherwise
+    # fall back to latin-1 which accepts every byte value.
+    try:
+        raw = path.read_bytes()[:65536]
+        raw.decode("utf-8")
+    except UnicodeDecodeError:
+        logger.debug(
+            "UTF-8 validation failed for '%s'; falling back to latin-1",
+            path.name,
+        )
+        return "latin-1"
+    except OSError:
+        pass  # Can't read — just return utf-8
 
     return "utf-8"
 
@@ -153,6 +182,18 @@ def detect_separator(filepath: str | Path, encoding: str = "utf-8") -> str:
     try:
         with open(path, "r", encoding=encoding, errors="replace") as f:
             sample = f.read(4096)
+
+        # For .dat files, check multi-character separators first (e.g., :: in MovieLens)
+        if path.suffix.lower() == ".dat":
+            lines = [ln for ln in sample.strip().split("\n")[:10] if ln.strip()]
+            for multi_sep in ("::", "||"):
+                if len(lines) >= 2 and all(multi_sep in ln for ln in lines):
+                    logger.debug(
+                        "Detected multi-char separator %r for '%s'",
+                        multi_sep, path.name,
+                    )
+                    return multi_sep
+
         dialect = csv.Sniffer().sniff(sample, delimiters=",\t|;")
         return dialect.delimiter
     except csv.Error:
@@ -295,20 +336,150 @@ def _get_charset_detector() -> Any | None:
     return None
 
 
+def _rename_headerless_columns(df: pd.DataFrame) -> pd.DataFrame:
+    """Rename integer columns from a headerless CSV to col_0, col_1, …"""
+    if all(isinstance(c, int) for c in df.columns):
+        df.columns = [f"col_{i}" for i in range(len(df.columns))]
+    return df
+
+
+def _detect_no_header(
+    filepath: str | Path,
+    encoding: str = "utf-8",
+    separator: str = ",",
+) -> bool:
+    """Heuristic: return True if the file likely has **no** header row.
+
+    Strategy
+    --------
+    1. Read the first 20 rows with ``header=None`` so row 0 is data.
+    2. For each column, check whether the first-row value *differs in kind*
+       from the remaining rows:
+       - If data rows are predominantly numeric but the first row is a
+         non-numeric string → that column looks like a header.
+       - If the first row is itself numeric (or the data rows are also
+         strings), the column is ambiguous.
+    3. If at least **half** of all columns look like headers, conclude the
+       file *has* a header → return ``False``.
+       Otherwise (most columns are data-like in row 0) → return ``True``.
+
+    Edge cases
+    ----------
+    - Files with only one row are assumed to have a header (pandas default).
+    - Files that cannot be sampled return ``False`` (safe default: assume
+      header present, matching ``pd.read_csv`` default).
+    """
+    path = Path(filepath)
+    try:
+        sample = pd.read_csv(
+            path,
+            encoding=encoding,
+            header=None,
+            nrows=20,
+            **_csv_kwargs(separator),
+        )
+    except Exception:
+        return False  # can't sample → fall back to default (has header)
+
+    if len(sample) < 2:
+        return False  # too few rows to tell
+
+    first_row = sample.iloc[0]
+    data_rows = sample.iloc[1:]
+
+    header_like_cols = 0
+    for col_idx in sample.columns:
+        first_val = first_row[col_idx]
+
+        # Can the first-row value be interpreted as a number?
+        first_is_numeric = _is_numeric_value(first_val)
+
+        # What fraction of the data rows are numeric for this column?
+        data_numeric_frac = data_rows[col_idx].apply(_is_numeric_value).mean()
+
+        if not first_is_numeric and data_numeric_frac > 0.5:
+            # First row is a string while data rows are numbers → header
+            header_like_cols += 1
+
+    n_cols = len(sample.columns)
+    # If at least half the columns look like headers, file has a header
+    return header_like_cols < (n_cols / 2)
+
+
+def _probe_no_header(sample: pd.DataFrame) -> bool:
+    """Like :func:`_detect_no_header` but operates on an already-loaded sample.
+
+    ``sample`` must have been read with ``header=None`` (integer column names).
+    Returns ``True`` when the first row looks like data (no header present).
+    """
+    if len(sample) < 2:
+        return False
+
+    first_row = sample.iloc[0]
+    data_rows = sample.iloc[1:]
+
+    header_like_cols = 0
+    for col_idx in sample.columns:
+        first_val = first_row[col_idx]
+        first_is_numeric = _is_numeric_value(first_val)
+        data_numeric_frac = data_rows[col_idx].apply(_is_numeric_value).mean()
+        if not first_is_numeric and data_numeric_frac > 0.5:
+            header_like_cols += 1
+
+    return header_like_cols < (len(sample.columns) / 2)
+
+
+def _is_numeric_value(val: Any) -> bool:
+    """Check whether a single value looks numeric."""
+    if isinstance(val, (int, float)):
+        return True
+    try:
+        float(str(val))
+        return True
+    except (ValueError, TypeError):
+        return False
+
+
 def _read_csv(
     filepath: Path,
     encoding: str = "utf-8",
     separator: str = ",",
     **kwargs: Any,
 ) -> pd.DataFrame:
-    """Read a CSV file."""
-    return pd.read_csv(
-        filepath,
-        encoding=encoding,
-        sep=separator,
-        low_memory=False,
-        **kwargs,
-    )
+    """Read a CSV file.
+
+    Multi-character separators (e.g. ``::`` in MovieLens .dat files) force
+    pandas to use the Python engine, which does not support ``low_memory``.
+    We only pass ``low_memory=False`` when the C engine will be used.
+
+    For ``.dat`` files the first row is inspected to decide whether a header
+    is present. If not, columns are named ``col_0``, ``col_1``, etc.
+    """
+    is_headerless = False
+    if Path(filepath).suffix.lower() == ".dat" and "header" not in kwargs:
+        is_headerless = _detect_no_header(filepath, encoding, separator)
+        if is_headerless:
+            kwargs["header"] = None
+    df = pd.read_csv(filepath, encoding=encoding, **_csv_kwargs(separator), **kwargs)
+    if is_headerless:
+        df = _rename_headerless_columns(df)
+    return df
+
+
+def _csv_kwargs(sep: str, **extra: Any) -> dict[str, Any]:
+    """Build ``pd.read_csv`` kwargs, handling multi-char separators correctly.
+
+    Multi-char separators (e.g. ``::`` in MovieLens ``.dat`` files) force
+    pandas to the Python engine.  We set ``engine='python'`` explicitly to
+    suppress the ``ParserWarning`` and omit ``low_memory`` which the Python
+    engine does not support.
+    """
+    kw: dict[str, Any] = {"sep": sep, **extra}
+    if len(sep) == 1 or sep == r"\s+":
+        kw["low_memory"] = False
+    else:
+        kw["engine"] = "python"
+    return kw
 
 
 def _read_tsv(
@@ -343,14 +514,44 @@ def _read_jsonl(
 ) -> pd.DataFrame:
     """Read a JSONL (newline-delimited JSON) file.
 
-    For each line, first tries json.loads(). If that fails, falls back to
-    ast.literal_eval() to handle Python-repr dicts (common in older
-    Steam/Amazon datasets).
-
-    For files with > 500k rows, prints progress every 500k rows.
+    **Fast path**: tries ``pd.read_json(lines=True)`` first — this is orders
+    of magnitude faster than line-by-line parsing. Only falls back to the slow
+    ``ast.literal_eval`` path when the fast path fails (e.g. Python-repr dicts
+    with single quotes, common in older Steam/Amazon datasets).
 
     Supports an optional ``nrows`` kwarg to read only the first N rows —
     used for dry-run schema sampling.
+    """
+    nrows: int | None = kwargs.pop("nrows", None)
+
+    # ── Fast path: pd.read_json with lines=True ─────────────────────────────
+    try:
+        if nrows is not None:
+            df = pd.read_json(filepath, lines=True, nrows=nrows, encoding=encoding)
+        else:
+            df = pd.read_json(filepath, lines=True, encoding=encoding)
+        logger.debug("Fast-path JSONL read succeeded for '%s'.", filepath.name)
+        return df
+    except (ValueError, TypeError, json.JSONDecodeError) as exc:
+        logger.debug(
+            "Fast-path JSONL failed for '%s' (%s); falling back to "
+            "line-by-line parsing (ast.literal_eval).",
+            filepath.name,
+            exc.__class__.__name__,
+        )
+
+    # ── Slow path: line-by-line with ast.literal_eval fallback ───────────────
+    return _read_jsonl_slow(filepath, encoding=encoding, nrows=nrows)
+
+
+def _read_jsonl_slow(
+    filepath: Path,
+    encoding: str = "utf-8",
+    nrows: int | None = None,
+) -> pd.DataFrame:
+    """Line-by-line JSONL reader for non-standard formats (Python-repr dicts).
+
+    Used as a fallback when ``pd.read_json(lines=True)`` fails.
     """
     try:
         from tqdm import tqdm
@@ -358,9 +559,6 @@ def _read_jsonl(
         has_tqdm = True
     except ImportError:
         has_tqdm = False
-
-    # Pop nrows before passing further (not a standard JSONL kwarg)
-    nrows: int | None = kwargs.pop("nrows", None)
 
     records: list[dict] = []
     parse_errors = 0
@@ -462,6 +660,7 @@ def _read_gzip(
     format_map = {
         ".csv": "csv",
         ".tsv": "tsv",
+        ".dat": "csv",
         ".json": "json",
         ".jsonl": "jsonl",
         ".parquet": "parquet",
@@ -470,9 +669,27 @@ def _read_gzip(
     inner_format = format_map.get(inner_suffix)
 
     if inner_format == "csv":
-        return pd.read_csv(filepath, encoding=encoding, sep=separator, compression="gzip", low_memory=False, **kwargs)
+        # For .dat inside gzip, detect header the same way as standalone .dat
+        if inner_suffix == ".dat" and "header" not in kwargs:
+            # Probe: read a small sample with header=None to check
+            try:
+                probe = pd.read_csv(
+                    filepath, encoding=encoding, compression="gzip",
+                    header=None, nrows=20, **_csv_kwargs(separator),
+                )
+                is_headerless = _probe_no_header(probe)
+            except Exception:
+                is_headerless = False
+            if is_headerless:
+                kwargs["header"] = None
+        else:
+            is_headerless = False
+        df = pd.read_csv(filepath, encoding=encoding, compression="gzip", **_csv_kwargs(separator), **kwargs)
+        if is_headerless:
+            df = _rename_headerless_columns(df)
+        return df
     elif inner_format == "tsv":
-        return pd.read_csv(filepath, encoding=encoding, sep="\t", compression="gzip", low_memory=False, **kwargs)
+        return pd.read_csv(filepath, encoding=encoding, compression="gzip", **_csv_kwargs("\t"), **kwargs)
     elif inner_format == "json":
         return pd.read_json(filepath, encoding=encoding, compression="gzip", **kwargs)
     elif inner_format == "jsonl":
@@ -494,7 +711,7 @@ def _read_gzip(
             "Could not detect inner format from '%s', trying as gzipped CSV",
             filepath.name,
         )
-        return pd.read_csv(filepath, encoding=encoding, sep=separator, compression="gzip", low_memory=False, **kwargs)
+        return pd.read_csv(filepath, encoding=encoding, compression="gzip", **_csv_kwargs(separator), **kwargs)
 
 
 def _read_zip(
@@ -542,10 +759,25 @@ def _read_zip(
 
         # Detect format from inner filename
         suffix = Path(target).suffix.lower()
+        # Detect format from inner filename
+        is_headerless = False
+        if suffix == ".dat" and "header" not in kwargs:
+            with zf.open(target) as probe_f:
+                try:
+                    probe = pd.read_csv(probe_f, encoding=encoding, header=None, nrows=20, **_csv_kwargs(sep if suffix != ".tsv" else "\t"))
+                    is_headerless = _probe_no_header(probe)
+                except Exception:
+                    pass
+            if is_headerless:
+                kwargs["header"] = None
+
+        sep = "\t" if suffix == ".tsv" else separator
         with zf.open(target) as f:
-            if suffix in (".csv", ".tsv"):
-                sep = "\t" if suffix == ".tsv" else separator
-                return pd.read_csv(f, encoding=encoding, sep=sep, low_memory=False, **kwargs)
+            if suffix in (".csv", ".tsv", ".dat"):
+                df = pd.read_csv(f, encoding=encoding, **_csv_kwargs(sep), **kwargs)
+                if is_headerless:
+                    df = _rename_headerless_columns(df)
+                return df
             elif suffix == ".json":
                 return pd.read_json(f, encoding=encoding, **kwargs)
             elif suffix == ".parquet":
@@ -553,7 +785,7 @@ def _read_zip(
             else:
                 # Default to CSV
                 logger.warning("Unknown format '%s' in ZIP, trying as CSV", suffix)
-                return pd.read_csv(f, encoding=encoding, sep=separator, low_memory=False, **kwargs)
+                return pd.read_csv(f, encoding=encoding, **_csv_kwargs(separator), **kwargs)
 
 
 def _read_tar(
@@ -613,9 +845,15 @@ def _read_tar(
             )
 
         with f:
-            if suffix in (".csv", ".tsv"):
+            if suffix in (".csv", ".tsv", ".dat"):
                 sep = "\t" if suffix == ".tsv" else separator
-                return pd.read_csv(f, encoding=encoding, sep=sep, low_memory=False, **kwargs)
+                is_headerless = suffix == ".dat" and "header" not in kwargs
+                if is_headerless:
+                    kwargs["header"] = None
+                df = pd.read_csv(f, encoding=encoding, **_csv_kwargs(sep), **kwargs)
+                if is_headerless:
+                    df = _rename_headerless_columns(df)
+                return df
             elif suffix == ".json":
                 # For JSONL (newline-delimited), we need to write to temp file
                 # since _read_jsonl expects a file path
@@ -636,4 +874,4 @@ def _read_tar(
                 return pd.read_parquet(f, engine="pyarrow", **kwargs)
             else:
                 logger.warning("Unknown format '%s' in TAR, trying as CSV", suffix)
-                return pd.read_csv(f, encoding=encoding, sep=separator, low_memory=False, **kwargs)
+                return pd.read_csv(f, encoding=encoding, **_csv_kwargs(separator), **kwargs)
