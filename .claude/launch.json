@@ -6,6 +6,12 @@
       "runtimeExecutable": "/opt/anaconda3/envs/msquared/bin/python",
       "runtimeArgs": ["webapp/app.py", "--output-dir", "/tmp/recdata_pipeline_test", "--port", "5001", "--debug"],
       "port": 5001
+    },
+    {
+      "name": "configapp",
+      "runtimeExecutable": "python",
+      "runtimeArgs": ["configapp/app.py", "--data-path", "C:\\Users\\23958502\\Documents\\datasets\\full", "--output-path", "C:\\Users\\23958502\\Documents\\Data-rec\\recdata\\configs", "--port", "5002"],
+      "port": 5002
     }
   ]
 }

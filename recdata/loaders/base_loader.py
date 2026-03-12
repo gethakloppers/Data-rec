@@ -106,6 +106,8 @@ _TYPE_ALIASES: dict[str, str] = {
     "token": "object",
     "token_seq": "object",
     "drop": "exclude",
+    "text": "string",
+    "boolean": "bool",
 }
 
 
@@ -215,8 +217,8 @@ def _validate_config(config: dict[str, Any], config_path: Path) -> None:
             if not isinstance(features, dict):
                 errors.append(f"'{feature_key}' must be a dict or null")
             else:
-                valid_types = {"object", "float", "text", "datetime", "misc", "exclude"}
-                legacy_types = {"token", "token_seq", "drop"}  # accepted for backward compat
+                valid_types = {"object", "float", "string", "datetime", "bool", "misc", "exclude"}
+                legacy_types = {"token", "token_seq", "drop", "text", "boolean"}  # accepted for backward compat
                 all_accepted = valid_types | legacy_types
                 for feat_type, columns in features.items():
                     if feat_type not in all_accepted:

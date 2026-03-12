@@ -1,0 +1,96 @@
+dataset_name: yelp
+domain: travel_and_hospitality
+source_url: https://business.yelp.com/data/resources/open-dataset/
+
+stakeholder_roles:
+  consumer:
+    supported: true
+    id: [user_id]
+    features: [name, review_count, yelping_since, useful, funny, cool, elite, fans, average_stars, compliment_hot, compliment_more,
+      compliment_profile, compliment_cute, compliment_list, compliment_note, compliment_plain, compliment_cool, compliment_funny,
+      compliment_writer, compliment_photos]
+  provider:
+    supported: true
+    id: [business_id]
+    features: [name]
+  upstream:
+    supported: false
+  downstream:
+    supported: false
+  system:
+    supported: true
+    features: []
+  third_party:
+    supported: false
+
+files:
+  interactions:
+  - yelp_academic_dataset_review.json
+  - yelp_academic_dataset_tip.json
+  items: yelp_academic_dataset_business.json
+  users: yelp_academic_dataset_user.json
+
+schema:
+  user_identifier: [user_id]
+  item_identifier: [business_id]
+  timestamp: [date]
+  rating: []
+
+item_features:
+  object: [business_id, state, postal_code, is_open, categories]
+  float: [latitude, longitude, stars, review_count]
+  string: [name, address, city]
+  datetime: []
+  bool: []
+  misc: [attributes, hours]
+  exclude: []
+
+interaction_features:
+  object: [user_id, business_id]
+  float: [stars, useful, funny, cool, business_id, compliment_count]
+  string: [text]
+  datetime: [date]
+  bool: []
+  misc: []
+  exclude: [review_id]
+
+user_features:
+  object: [user_id, elite, friends]
+  float: [review_count, useful, funny, cool, fans, average_stars, compliment_hot, compliment_more, compliment_profile, compliment_cute,
+    compliment_list, compliment_note, compliment_plain, compliment_cool, compliment_funny, compliment_writer, compliment_photos]
+  string: [name]
+  datetime: [yelping_since]
+  bool: []
+  misc: []
+  exclude: []
+
+other_features: null
+
+taxonomy:
+  interactions:
+    user_id: [user_id]
+    item_id: [business_id]
+    explicit_feedback: [text]
+    implicit_feedback: []
+    timestamp: [date]
+    session_data: []
+    interaction_context: [stars, useful, funny, cool, compliment_count]
+    other: []
+    exclude: [review_id]
+  items:
+    item_id: [business_id]
+    descriptive_features: [state, postal_code, latitude, longitude, stars, review_count, is_open, categories]
+    content_features: [name, address, city]
+    provider_upstream_info: []
+    other: [attributes, hours]
+    exclude: []
+  users:
+    user_id: [user_id]
+    demographics: []
+    downstream_stakeholder_info: []
+    additional_attributes: [name, review_count, yelping_since, useful, funny, cool, elite, fans, average_stars, compliment_hot,
+      compliment_more, compliment_profile, compliment_cute, compliment_list, compliment_note, compliment_plain, compliment_cool,
+      compliment_funny, compliment_writer, compliment_photos]
+    other: [friends]
+    exclude: []
+  other: null

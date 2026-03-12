@@ -1,0 +1,134 @@
+dataset_name: Steam
+domain: media_and_entertainment
+version: '2025'
+source_url: https://github.com/vintagedon/steam-dataset-2025
+citation: |
+  @article{https://doi.org/10.5281/zenodo.17286924,
+    doi = {10.5281/ZENODO.17286924},
+    url = {https://zenodo.org/doi/10.5281/zenodo.17286924},
+    author = {Deepika, I and Gowthami Kumari,GS},
+  volume = 15,
+  issue = 2,
+    booktitle = {{International Journal of Advanced Research and Innovations}},
+    title = {Recognizing human activity using opencv and python},
+    publisher = {Zenodo},
+    year = {2025},
+    copyright = {Creative Commons Attribution 4.0 International}
+  }
+
+stakeholder_roles:
+  consumer:
+    supported: true
+    id: [author_steamid]
+    features: []
+  provider:
+    supported: true
+    id: [developer_id]
+    features: [id, id]
+  upstream:
+    supported: true
+    id: [publisher_id]
+    features: []
+  downstream:
+    supported: false
+  system:
+    supported: true
+    features: [mat_final_price, steam_purchase]
+  third_party:
+    supported: false
+
+files:
+  interactions: reviews.csv
+  items:
+  - application_categories.csv
+  - application_developers.csv
+  - application_genres.csv
+  - application_platforms.csv
+  - application_publishers.csv
+  - applications.csv
+  users: null
+  other:
+  - categories.csv
+  - developers.csv
+  - genres.csv
+  - platforms.csv
+  - publishers.csv
+
+schema:
+  user_identifier: [author_steamid]
+  item_identifier: [appid]
+  timestamp: [created_at]
+  rating: []
+
+item_features:
+  object: [appid, category_id, developer_id, genre_id, platform_id, publisher_id, type, mat_currency, id]
+  float: [required_age, metacritic_score, recommendations_total, mat_initial_price, mat_final_price, mat_discount_percent,
+    id]
+  string: [name, short_description, header_image, background]
+  datetime: [release_date, created_at, updated_at]
+  bool: [is_free, mat_supports_windows, mat_supports_mac, mat_supports_linux]
+  misc: [supported_languages, mat_achievement_count, mat_pc_os_min, mat_pc_processor_min, mat_pc_memory_min, mat_pc_graphics_min,
+    mat_pc_os_rec, mat_pc_processor_rec, mat_pc_memory_rec, mat_pc_graphics_rec]
+  exclude: []
+
+interaction_features:
+  object: [appid, author_steamid, language]
+  float: [author_num_games_owned, author_num_reviews, author_playtime_forever, author_playtime_last_two_weeks, author_playtime_at_review,
+    votes_up, votes_funny, weighted_vote_score, comment_count]
+  string: [review_text]
+  datetime: [author_last_played]
+  bool: [voted_up, steam_purchase, received_for_free, written_during_early_access]
+  misc: []
+  exclude: [recommendationid, timestamp_created, timestamp_updated]
+
+user_features: null
+
+other_features:
+  object: [id]
+  float: []
+  string: [name]
+  datetime: []
+  bool: []
+  misc: []
+  exclude: []
+
+taxonomy:
+  interactions:
+    user_id: [author_steamid]
+    item_id: [appid]
+    explicit_feedback: [review_text]
+    implicit_feedback: []
+    timestamp: [created_at]
+    session_data: []
+    interaction_context: [language, voted_up, votes_up, votes_funny, weighted_vote_score, comment_count, steam_purchase, received_for_free,
+      written_during_early_access, updated_at]
+    other: [author_num_games_owned, author_num_reviews, author_playtime_forever, author_playtime_last_two_weeks, author_playtime_at_review,
+      author_last_played]
+    exclude: [recommendationid, timestamp_created, timestamp_updated]
+  items:
+    item_id: [appid]
+    descriptive_features: [category_id, developer_id, genre_id, platform_id, publisher_id, type, is_free, release_date, required_age,
+      supported_languages, metacritic_score, recommendations_total, mat_supports_windows, mat_supports_mac, mat_supports_linux,
+      mat_initial_price, mat_final_price, mat_discount_percent, mat_currency, created_at, updated_at, id]
+    content_features: [name, short_description, header_image, background]
+    provider_upstream_info: []
+    other: [mat_achievement_count, mat_pc_os_min, mat_pc_processor_min, mat_pc_memory_min, mat_pc_graphics_min, mat_pc_os_rec,
+      mat_pc_processor_rec, mat_pc_memory_rec, mat_pc_graphics_rec, id, name]
+    exclude: []
+  users: null
+  other:
+    user_id: []
+    item_id: []
+    descriptive_features: [id]
+    content_features: [name]
+    provider_upstream_info: [id]
+    demographics: []
+    downstream_stakeholder_info: []
+    additional_attributes: []
+    explicit_feedback: []
+    implicit_feedback: []
+    timestamp: []
+    session_data: []
+    interaction_context: []
+    other: [id]
+    exclude: []

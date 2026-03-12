@@ -14,7 +14,7 @@
   <p class="subtitle">Dataset configuration tool</p>
 </header>
 
-<main x-data="configApp('{{ default_path }}', '{{ output_path }}')" x-cloak>
+<main x-data='configApp({{ default_path|tojson }}, {{ output_path|tojson }})' x-cloak>
 
   <!-- Step indicator -->
   <nav class="steps">
@@ -176,7 +176,6 @@
                 <th>Column</th>
                 <th>Samples</th>
                 <th>Type</th>
-                <th>Separator</th>
                 <th>Schema</th>
               </tr>
             </thead>
@@ -208,24 +207,12 @@
                             @change="autoUpdateSchema(col)">
                       <option value="">— Select —</option>
                       <option value="float">Numerical</option>
-                      <option value="object">Object</option>
-                      <option value="text">Free text</option>
+                      <option value="object">Categorical</option>
+                      <option value="string">Text</option>
                       <option value="datetime">Datetime</option>
-                      <option value="boolean">Boolean</option>
-                      <option value="url">URL</option>
+                      <option value="bool">Boolean</option>
                       <option value="misc">Misc</option>
-                      <option value="exclude">Exclude</option>
                     </select>
-                  </td>
-                  <td>
-                    <template x-if="getColumnConfig(col).type === 'object'">
-                      <select x-model="getColumnConfig(col).separator" class="sep-select">
-                        <option value="|">|</option>
-                        <option value=",">,</option>
-                        <option value=";">;</option>
-                        <option value=" ">space</option>
-                      </select>
-                    </template>
                   </td>
                   <td>
                     <select class="schema-select"

@@ -311,7 +311,7 @@ def _taxonomy_auto_detect(
         "items": {
             "identifiers": "item_id" in all_cols,
             "descriptive_features": True,  # most datasets have some
-            "content_features": _has_columns_with_type(config, "text"),
+            "content_features": _has_columns_with_type(config, "string") or _has_columns_with_type(config, "text"),
             "provider_information": _has_columns_matching(
                 dfs,
                 ["developer", "publisher", "author", "seller", "brand",

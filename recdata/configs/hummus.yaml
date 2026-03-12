@@ -3,26 +3,27 @@ domain: healthcare_and_wellness
 source_url: https://gitlab.com/felix134/connected-recipe-data-set
 citation: |
   @inproceedings{10.1145/3604915.3609491,
-  author = {B\"{o}lz, Felix and Nurbakova, Diana and Calabretto, Sylvie and Gerl, Armin and Brunie, Lionel and Kosch, Harald},
-  title = {HUMMUS: A Linked, Healthiness-Aware, User-centered and Argument-Enabling Recipe Data Set for Recommendation},
-  year = {2023},
-  publisher = {Association for Computing Machinery},
-  address = {New York, NY, USA},
-  url = {https://doi.org/10.1145/3604915.3609491},
-  doi = {10.1145/3604915.3609491},
-  booktitle = {17th ACM Conference on Recommender Systems},
-  pages = {1–11},
-  location = {Singapore, Singapore},
-  }
+    author = {B\"{o}lz, Felix and Nurbakova, Diana and Calabretto, Sylvie and Gerl, Armin and Brunie, Lionel and Kosch, Harald},
+    title = {HUMMUS: A Linked, Healthiness-Aware, User-centered and Argument-Enabling Recipe Data Set for Recommendation},
+    year = {2023},
+    publisher = {Association for Computing Machinery},
+    address = {New York, NY, USA},
+    url = {https://doi.org/10.1145/3604915.3609491},
+    doi = {10.1145/3604915.3609491},
+    booktitle = {17th ACM Conference on Recommender Systems},
+    pages = {1–11},
+    location = {Singapore, Singapore},
+    }
 
 stakeholder_roles:
   consumer:
     supported: true
-    id: [new_member_id]
-    features: [member_name, member_status, member_avg_rating, member_joined, follows_count, follow_me_count]
+    id: [member_id]
+    features: [member_name, member_description, member_status, member_avg_rating, member_map_pin, member_joined, follows_count,
+      follow_me_count]
   provider:
     supported: true
-    id: [new_author_id]
+    id: [author_id]
     features: []
   upstream:
     supported: false
@@ -30,70 +31,85 @@ stakeholder_roles:
     supported: false
   system:
     supported: true
-    features: [nutri_score, fsa_score, who_score]
+    features: [who_score, fsa_score, nutri_score]
   third_party:
     supported: false
 
 files:
-  interactions: pp_reviews.csv
-  items: pp_recipes.csv
-  users: pp_members.csv
+  interactions:
+    filename: pp_reviews.csv
+    archive: pp_reviews.zip
+  items:
+    filename: pp_recipes.csv
+    archive: pp_recipes.zip
+  users:
+    filename: pp_members.csv
+    archive: pp_members.zip
 
 schema:
-  user_identifier: [new_member_id]
-  item_identifier: [new_recipe_id]
-  timestamp: []
+  user_identifier: [member_id]
+  item_identifier: [recipe_id]
+  timestamp: [last_modified_date]
   rating: [rating]
 
 item_features:
-  object: [serves, last_changed_date, new_recipe_id, new_author_id, tags]
+  object: [recipe_id, author_id, tags, ingredient_food_kg_names]
   float: [duration, average_rating, number_of_ratings, servingsperrecipe, 'servingsize_[g]', 'calories_[cal]', 'caloriesfromfat_[cal]',
     'totalfat_[g]', 'saturatedfat_[g]', 'cholesterol_[mg]', 'sodium_[mg]', 'totalcarbohydrate_[g]', 'dietaryfiber_[g]', 'sugars_[g]',
     'protein_[g]', direction_size, ingredients_sizes, who_score, fsa_score, nutri_score]
-  text: [title, description, directions, food_kg_locator, recipe_url, ingredient_food_kg_urls]
-  misc: [ingredients, normalization_comment, ingredient_food_kg_names]
-  exclude: ['unnamed:_0', recipe_id, author_id]
+  string: [title, description, directions, food_kg_locator, recipe_url, ingredient_food_kg_urls]
+  datetime: [last_changed_date]
+  bool: []
+  misc: [ingredients, serves, normalization_comment]
+  exclude: ['unnamed:_0', new_recipe_id, new_author_id]
 
 interaction_features:
-  object: [last_modified_date, new_member_id, new_recipe_id]
-  float: [rating, likes]
-  text: [text, review_url, member_url]
+  object: [review_id]
+  float: [member_id, recipe_id, rating, likes]
+  string: [text, review_url, member_url]
+  datetime: [last_modified_date]
+  bool: []
   misc: []
-  exclude: ['unnamed:_0', member_id, recipe_id, review_id]
+  exclude: ['unnamed:_0', new_member_id, new_recipe_id]
 
 user_features:
-  object: [member_status, member_joined, new_member_id]
+  object: [member_id, member_status]
   float: [member_avg_rating, follows_count, follow_me_count]
-  text: [member_url, member_name, avatar_url]
+  string: [member_url, member_name, avatar_url]
+  datetime: [member_joined]
+  bool: []
   misc: [member_description, member_map_pin]
-  exclude: ['unnamed:_0', member_id]
+  exclude: ['unnamed:_0', new_member_id]
 
 other_features: null
 
 taxonomy:
   interactions:
-    user_id: [new_member_id]
-    item_id: [new_recipe_id]
+    user_id: [member_id]
+    item_id: [recipe_id]
     explicit_feedback: [rating, text]
     implicit_feedback: []
-    timestamp: []
+    timestamp: [last_modified_date]
     session_data: []
-    interaction_context: [likes, last_modified_date]
-    other: ['unnamed:_0', member_id, recipe_id, review_id, review_url, member_url]
+    interaction_context: [likes]
+    other: [review_id, review_url, member_url]
+    exclude: ['unnamed:_0', new_member_id, new_recipe_id]
   items:
-    item_id: [new_recipe_id]
+    item_id: [recipe_id]
     descriptive_features: [duration, ingredients, serves, last_changed_date, tags, average_rating, number_of_ratings, servingsperrecipe,
       'servingsize_[g]', 'calories_[cal]', 'caloriesfromfat_[cal]', 'totalfat_[g]', 'saturatedfat_[g]', 'cholesterol_[mg]',
       'sodium_[mg]', 'totalcarbohydrate_[g]', 'dietaryfiber_[g]', 'sugars_[g]', 'protein_[g]', direction_size, ingredients_sizes,
       who_score, fsa_score, nutri_score]
-    content_features: [title, description, directions]
-    provider_upstream_info: [new_author_id]
-    other: ['unnamed:_0', recipe_id, author_id, food_kg_locator, recipe_url, normalization_comment, ingredient_food_kg_urls,
-      ingredient_food_kg_names]
+    content_features: [title, description, directions, food_kg_locator, recipe_url]
+    provider_upstream_info: [author_id]
+    other: [normalization_comment, ingredient_food_kg_urls, ingredient_food_kg_names]
+    exclude: ['unnamed:_0', new_recipe_id, new_author_id]
   users:
-    user_id: [new_member_id]
+    user_id: [member_id]
     demographics: []
     downstream_stakeholder_info: []
-    additional_attributes: [member_name, member_status, member_avg_rating, member_joined, follows_count, follow_me_count]
-    other: ['unnamed:_0', member_id, member_url, member_description, member_map_pin, avatar_url]
+    additional_attributes: [member_name, member_description, member_status, member_avg_rating, member_map_pin, member_joined,
+      follows_count, follow_me_count]
+    other: [member_url, avatar_url]
+    exclude: ['unnamed:_0', new_member_id]
   other: null

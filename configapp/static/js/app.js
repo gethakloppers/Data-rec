@@ -23,6 +23,7 @@ const TAXONOMY = {
       { key: "downstream_stakeholder_info", label: "Downstream Stakeholder Info", desc: "Social graph data (friends, followers, trust)" },
       { key: "additional_attributes", label: "Additional Attributes", desc: "Other user data (browsing frequency, etc.)" },
       { key: "other", label: "Other", desc: "Does not fit any category above" },
+      { key: "exclude", label: "Exclude", desc: "Column excluded from output" },
     ],
   },
   items: {
@@ -33,6 +34,7 @@ const TAXONOMY = {
       { key: "content_features", label: "Content Features", desc: "Unstructured/semi-structured: text, images" },
       { key: "provider_upstream_info", label: "Provider / Upstream Info", desc: "Creator, seller, author, publisher metadata" },
       { key: "other", label: "Other", desc: "Does not fit any category above" },
+      { key: "exclude", label: "Exclude", desc: "Column excluded from output" },
     ],
   },
   interactions: {
@@ -46,6 +48,7 @@ const TAXONOMY = {
       { key: "session_data", label: "Session Data", desc: "Session identifiers and metadata" },
       { key: "interaction_context", label: "Interaction Context", desc: "Device, location, other context" },
       { key: "other", label: "Other", desc: "Does not fit any category above" },
+      { key: "exclude", label: "Exclude", desc: "Column excluded from output" },
     ],
   },
 };
@@ -62,13 +65,11 @@ const _NAME_HINTS = [
 // Type labels for display
 const TYPE_LABELS = {
   float: "Numerical",
-  object: "Object",
-  text: "Free text",
+  object: "Categorical",
+  string: "Text",
   datetime: "Datetime",
-  boolean: "Boolean",
-  url: "URL",
+  bool: "Boolean",
   misc: "Misc",
-  exclude: "Exclude",
 };
 
 
@@ -91,7 +92,7 @@ function configApp(defaultPath, outputPath) {
     // ── Step 2: Column config + Schema (merged) ──
     activeTab: "",           // tabKey: "role__filename"
     previews: {},            // { tabKey: previewData }
-    columnConfigs: {},       // { tabKey: { colName: { type, separator, schema } } }
+    columnConfigs: {},       // { tabKey: { colName: { type, schema } } }
     previewLoading: false,
     previewError: "",
 
@@ -327,16 +328,11 @@ function configApp(defaultPath, outputPath) {
         if (!this.columnConfigs[tabKey]) this.columnConfigs[tabKey] = {};
         for (const col of data.columns) {
           const suggestedType = data.suggested_types[col] || "";
-          const suggestedSep = data.suggested_separators[col] || "|";
-          const suggestedSchema = suggestedType !== "exclude"
-            ? this._autoSchemaCategory(col, suggestedType, role)
-            : "";
+          const suggestedSchema = this._autoSchemaCategory(col, suggestedType, role);
 
           if (!this.columnConfigs[tabKey][col]) {
-            // Create new config with all fields
             this.columnConfigs[tabKey][col] = {
               type: suggestedType,
-              separator: suggestedSep,
               schema: suggestedSchema,
             };
           } else {
@@ -353,7 +349,6 @@ function configApp(defaultPath, outputPath) {
           for (const [pcol, pcfg] of Object.entries(pendingCfg)) {
             if (this.columnConfigs[tabKey][pcol]) {
               if (pcfg.type) this.columnConfigs[tabKey][pcol].type = pcfg.type;
-              if (pcfg.separator) this.columnConfigs[tabKey][pcol].separator = pcfg.separator;
               if (pcfg.schema) this.columnConfigs[tabKey][pcol].schema = pcfg.schema;
             }
             // Columns in pending config but not in file are silently ignored
@@ -382,10 +377,6 @@ function configApp(defaultPath, outputPath) {
      */
     autoUpdateSchema(col) {
       const cfg = this.getColumnConfig(col);
-      if (cfg.type === "exclude") {
-        cfg.schema = "";
-        return;
-      }
       cfg.schema = this._autoSchemaCategory(col, cfg.type, this.activeRole);
     },
 
@@ -413,27 +404,25 @@ function configApp(defaultPath, outputPath) {
       // ── Type-based rules per role ──
 
       if (fileRole === "items") {
-        if (colType === "text") return "content_features";
-        if (colType === "url") return "other";
+        if (colType === "string") return "content_features";
         if (colType === "misc") return "";  // Doesn't fit any category
         // Everything else left unassigned
       }
 
       if (fileRole === "interactions") {
         if (colType === "datetime") return "timestamp";
-        if (colType === "text") return "explicit_feedback";
+        if (colType === "string") return "explicit_feedback";
         // Everything else left unassigned for interactions
       }
 
       if (fileRole === "users") {
-        if (colType === "boolean") return "additional_attributes";
+        if (colType === "bool") return "additional_attributes";
         // Everything else left unassigned for users
       }
 
       if (fileRole === "other") {
-        // For supplementary files, text → content_features, everything else unassigned
-        if (colType === "text") return "content_features";
-        if (colType === "url") return "other";
+        // For supplementary files, string → content_features, everything else unassigned
+        if (colType === "string") return "content_features";
       }
 
       return "";
@@ -592,7 +581,7 @@ function configApp(defaultPath, outputPath) {
         if (!preview) continue;
         for (const col of preview.columns) {
           const cfg = configs[col] || {};
-          if (cfg.type === "exclude") continue;
+          if (cfg.schema === "exclude") continue;
           if (!seen.has(col)) {
             seen.add(col);
             cols.push({ name: col, type: cfg.type || "", role: af.role, filename: af.filename });
@@ -618,7 +607,7 @@ function configApp(defaultPath, outputPath) {
     getColumnConfig(col) {
       if (!this.columnConfigs[this.activeTab]) this.columnConfigs[this.activeTab] = {};
       if (!this.columnConfigs[this.activeTab][col]) {
-        this.columnConfigs[this.activeTab][col] = { type: "", separator: "|", schema: "" };
+        this.columnConfigs[this.activeTab][col] = { type: "", schema: "" };
       }
       return this.columnConfigs[this.activeTab][col];
     },
@@ -633,9 +622,10 @@ function configApp(defaultPath, outputPath) {
       const idx = preview.columns.indexOf(col);
       if (idx < 0) return [];
 
-      const cfg = this.getColumnConfig(col);
       const seen = new Set();
       const samples = [];
+      // Use auto-detected separator from the preview data (set by the backend)
+      const autoSep = preview.suggested_separators?.[col] || "";
 
       for (const row of preview.rows) {
         const raw = row[idx];
@@ -649,13 +639,10 @@ function configApp(defaultPath, outputPath) {
           parts: [],
         };
 
-        // Detect list values: object columns with a separator set
-        if (cfg.type === "object" && cfg.separator) {
-          const sep = cfg.separator;
-          if (str.includes(sep)) {
-            sample.isList = true;
-            sample.parts = str.split(sep).map((p) => p.trim()).filter(Boolean).slice(0, 5);
-          }
+        // Detect list values using auto-detected separator
+        if (autoSep && str.includes(autoSep)) {
+          sample.isList = true;
+          sample.parts = str.split(autoSep).map((p) => p.trim()).filter(Boolean).slice(0, 5);
         }
         // Also detect Python list repr: ['a', 'b', 'c']
         if (!sample.isList && str.startsWith("[") && str.endsWith("]")) {
@@ -677,15 +664,14 @@ function configApp(defaultPath, outputPath) {
 
     rowClass(col) {
       const cfg = this.getColumnConfig(col);
+      if (cfg.schema === "exclude") return "row-drop";
       const t = cfg.type;
       if (t === "float") return "row-float";
       if (t === "object") return "row-token";
-      if (t === "text") return "row-text";
+      if (t === "string") return "row-text";
       if (t === "datetime") return "row-datetime";
-      if (t === "boolean") return "row-boolean";
-      if (t === "url") return "row-url";
+      if (t === "bool") return "row-boolean";
       if (t === "misc") return "row-misc";
-      if (t === "exclude") return "row-drop";
       return "";
     },
 

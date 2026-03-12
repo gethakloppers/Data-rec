@@ -112,6 +112,28 @@ def standardise_df(
             df[col] = df[col].astype(str)
             logger.debug("[%s] Cast object column '%s' to str.", df_role, col)
 
+    # ── Step 4c: Cast all bool-typed columns to boolean ──────────────────────
+    bool_cols = [
+        col_name for col_name, feat_type in feature_map.items()
+        if feat_type == "bool" and col_name in df.columns
+    ]
+    for col in bool_cols:
+        if df[col].dtype != bool:
+            # Map common boolean-like values to True/False
+            bool_map = {
+                "true": True, "false": False,
+                "yes": True, "no": False,
+                "t": True, "f": False,
+                "y": True, "n": False,
+                "1": True, "0": False,
+                "on": True, "off": False,
+            }
+            df[col] = (
+                df[col].astype(str).str.lower().str.strip()
+                .map(bool_map).astype("boolean")
+            )
+            logger.debug("[%s] Cast bool column '%s' to boolean.", df_role, col)
+
     # ── Step 5: Cast ALL datetime-typed columns to datetime64[ns] ───────────
     #   Applies to every role, not just interactions. Uses the feature map to
     #   find columns declared as 'datetime', plus the schema timestamp column

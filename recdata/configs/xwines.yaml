@@ -3,16 +3,16 @@ domain: ecommerce_and_retail
 source_url: https://github.com/rogerioxavier/X-Wines
 citation: |
   @Article{xwines,
-    AUTHOR = {de Azambuja, Rogério Xavier and Morais, A. Jorge and Filipe, Vítor},
-    TITLE = {X-Wines: A Wine Dataset for Recommender Systems and Machine Learning},
-    JOURNAL = {Big Data and Cognitive Computing},
-    VOLUME = {7},
-    YEAR = {2023},
-    NUMBER = {1},
-    ARTICLE-NUMBER = {20},
-    URL = {https://www.mdpi.com/2504-2289/7/1/20},
-    DOI = {10.3390/bdcc7010020}
-    }
+  AUTHOR = {de Azambuja, Rogério Xavier and Morais, A. Jorge and Filipe, Vítor},
+  TITLE = {X-Wines: A Wine Dataset for Recommender Systems and Machine Learning},
+  JOURNAL = {Big Data and Cognitive Computing},
+  VOLUME = {7},
+  YEAR = {2023},
+  NUMBER = {1},
+  ARTICLE-NUMBER = {20},
+  URL = {https://www.mdpi.com/2504-2289/7/1/20},
+  DOI = {10.3390/bdcc7010020}
+  }
 
 stakeholder_roles:
   consumer:
@@ -29,17 +29,13 @@ stakeholder_roles:
     supported: false
   system:
     supported: true
-    features: [regionid, regionname, country, code]
+    features: [country, code]
   third_party:
     supported: false
 
 files:
-  interactions:
-    filename: XWines_Full_21M_ratings.csv
-    archive: XWines_Full_21M_ratings.zip
-  items:
-    filename: XWines_Full_100K_wines.csv
-    archive: XWines_Full_100K_wines.zip
+  interactions: XWines_Full_21M_ratings.csv
+  items: XWines_Full_100K_wines.csv
   users: null
 
 schema:
@@ -49,25 +45,26 @@ schema:
   rating: [rating]
 
 item_features:
-  object: [wineid, type, elaborate, grapes, body, acidity, code, regionid, wineryid, harmonize, vintages]
+  object: [wineid, type, elaborate, grapes, harmonize, body, acidity, code, regionid, wineryid, vintages]
   float: [abv]
-  text: [winename, country, regionname, wineryname, website]
+  string: [winename, country, regionname, wineryname, website]
+  datetime: []
+  bool: []
   misc: []
   exclude: []
 
 interaction_features:
-  object: [userid, wineid, vintage, date]
+  object: [userid, wineid]
   float: [rating]
-  text: []
+  string: []
+  datetime: [date]
+  bool: []
   misc: []
-  exclude: [ratingid]
+  exclude: [ratingid, vintage]
 
 user_features: null
 
 other_features: null
-
-
-
 
 taxonomy:
   interactions:
@@ -77,13 +74,15 @@ taxonomy:
     implicit_feedback: []
     timestamp: [date]
     session_data: []
-    interaction_context: [vintage]
-    other: [ratingid]
+    interaction_context: []
+    other: []
+    exclude: [ratingid, vintage]
   items:
     item_id: [wineid]
-    descriptive_features: [type, elaborate, grapes, harmonize, abv, body, acidity, code, regionid, vintages]
+    descriptive_features: [type, elaborate, grapes, harmonize, abv, body, acidity, code, regionid, wineryname, vintages]
     content_features: [winename, country, regionname]
-    provider_upstream_info: [wineryid, wineryname]
-    other: [website]
+    provider_upstream_info: [wineryid]
+    other: [website, ratingid, userid, vintage, rating, date]
+    exclude: []
   users: null
   other: null

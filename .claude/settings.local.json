@@ -1,0 +1,17 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python configapp/app.py --data-path \"C:\\\\Users\\\\23958502\\\\Documents\\\\datasets\\\\full\" --output-path \"C:\\\\Users\\\\23958502\\\\Documents\\\\Data-rec\\\\recdata\\\\configs\" --port 5001)",
+      "Bash(pip install:*)",
+      "mcp__Claude_Preview__preview_start",
+      "Bash(curl -s http://localhost:5001)",
+      "Bash(curl -s -X POST http://localhost:5002/api/scan-folder -H \"Content-Type: application/json\" -d \"{\"\"folder_path\"\": \"\"C:\\\\Users\\\\23958502\\\\Documents\\\\datasets\\\\full\"\"}\")",
+      "Bash(python -m json.tool)",
+      "Bash(python -c \"import json; print\\(json.dumps\\({''''folder_path'''': ''''C:/Users/23958502/Documents/datasets/full''''}\\)\\)\")",
+      "Bash(curl -s -X POST http://localhost:5002/api/scan-folder -H \"Content-Type: application/json\" -d @-)",
+      "Bash(curl -s -X POST http://localhost:5002/api/preview-file -H \"Content-Type: application/json\" -d \"{\"\"folder_path\"\": \"\"C:/Users/23958502/Documents/datasets/full/xwines\"\", \"\"filename\"\": \"\"XWines_Full_21M_ratings.csv\"\"}\")",
+      "Bash(curl -s -X POST http://localhost:5002/api/export-config -H \"Content-Type: application/json\" -d @-)",
+      "Bash(python -c \":*)"
+    ]
+  }
+}

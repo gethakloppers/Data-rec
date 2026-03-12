@@ -281,9 +281,8 @@ def _suggest_type(
         3. Already datetime64 → datetime
         4. String-based: boolean → datetime → url → token_seq → text → token
 
-    Returns one of: ``'float'``, ``'object'``, ``'text'``,
-    ``'datetime'``, ``'boolean'``, ``'url'``, ``'misc'``, ``'exclude'``, or
-    ``''`` (unset).
+    Returns one of: ``'float'``, ``'object'``, ``'string'``,
+    ``'datetime'``, ``'bool'``, ``'misc'``, or ``''`` (unset).
     """
     import pandas as pd
 
@@ -293,7 +292,7 @@ def _suggest_type(
 
     # ── 1. Boolean dtype ──
     if series.dtype == bool:
-        return "boolean"
+        return "bool"
 
     # ── 2. Numeric columns → datetime (timestamp) or float ──
     if series.dtype.kind in ("i", "u", "f"):
@@ -313,7 +312,7 @@ def _suggest_type(
 
         # 4a. Boolean-like string values
         if _looks_like_boolean(series):
-            return "boolean"
+            return "bool"
 
         # 4b. Datetime by column name + parsing
         _datetime_name_hints = (
@@ -325,9 +324,9 @@ def _suggest_type(
             if parsed.notna().mean() > 0.5:
                 return "datetime"
 
-        # 4c. URL pattern
+        # 4c. URL pattern → string type
         if _looks_like_url(str_vals, col_lower):
-            return "url"
+            return "string"
 
         # 4d. Delimiter-separated list → object (with separator recorded)
         for sep in ["|", ";", ","]:
@@ -338,11 +337,11 @@ def _suggest_type(
                 separators[col] = sep
                 return "object"
 
-        # 4e. Long strings → text
+        # 4e. Long strings → string (free text)
         lengths = str_vals.str.len()
         median_len = lengths.median()
         if median_len > 50:
-            return "text"
+            return "string"
 
         # 4f. Low cardinality → object (categorical)
         nunique = series.nunique()
@@ -478,13 +477,15 @@ _CustomDumper.add_representer(OrderedDict, _ordered_dict_representer)
 _WIZARD_TO_YAML_TYPE: dict[str, str | None] = {
     "float": "float",
     "object": "object",
-    "text": "text",
-    "exclude": "exclude",
+    "string": "string",
     "datetime": "datetime",
-    "boolean": "object",   # booleans become categorical object
-    "url": "text",         # URLs stored as text
-    "misc": "misc",        # misc retained as its own type
+    "bool": "bool",
+    "misc": "misc",
     # Legacy wizard types (kept for backward compat with in-flight sessions)
+    "text": "string",
+    "boolean": "object",
+    "url": "string",
+    "exclude": "exclude",
     "token": "object",
     "token_seq": "object",
 }
@@ -493,11 +494,13 @@ _WIZARD_TO_YAML_TYPE: dict[str, str | None] = {
 _YAML_TO_WIZARD_TYPE: dict[str, str] = {
     "object": "object",
     "float": "float",
-    "text": "text",
+    "string": "string",
     "datetime": "datetime",
+    "bool": "bool",
     "misc": "misc",
     "exclude": "exclude",
     # Legacy YAML types
+    "text": "string",
     "token": "object",
     "token_seq": "object",
     "drop": "exclude",
@@ -510,22 +513,22 @@ _SCHEMA_SKIP_CATEGORIES = {"user_id", "item_id", "timestamp"}
 _TAXONOMY_CATS: dict[str, list[str]] = {
     "interactions": [
         "user_id", "item_id", "explicit_feedback", "implicit_feedback",
-        "timestamp", "session_data", "interaction_context", "other",
+        "timestamp", "session_data", "interaction_context", "other", "exclude",
     ],
     "items": [
         "item_id", "descriptive_features", "content_features",
-        "provider_upstream_info", "other",
+        "provider_upstream_info", "other", "exclude",
     ],
     "users": [
         "user_id", "demographics", "downstream_stakeholder_info",
-        "additional_attributes", "other",
+        "additional_attributes", "other", "exclude",
     ],
     # "other" files can use any category — superset of all roles
     "other": [
         "user_id", "item_id", "descriptive_features", "content_features",
         "provider_upstream_info", "demographics", "downstream_stakeholder_info",
         "additional_attributes", "explicit_feedback", "implicit_feedback",
-        "timestamp", "session_data", "interaction_context", "other",
+        "timestamp", "session_data", "interaction_context", "other", "exclude",
     ],
 }
 
@@ -769,17 +772,20 @@ def _parse_yaml_to_wizard_state(config_path: Path) -> dict:
             for col, cfg in schema_columns.items():
                 col_configs[col] = {
                     "type": cfg["type"],
-                    "separator": "|",
                     "schema": cfg["schema"],
                 }
 
             # Add feature columns
             for col, wizard_type in feature_type_map.items():
                 if col not in col_configs:
+                    # Handle old exclude-as-type: convert to schema "exclude"
+                    schema_val = taxonomy_map.get(col, "")
+                    if wizard_type == "exclude":
+                        schema_val = "exclude"
+                        wizard_type = ""
                     col_configs[col] = {
                         "type": wizard_type,
-                        "separator": "|",
-                        "schema": taxonomy_map.get(col, ""),
+                        "schema": schema_val,
                     }
 
             # Add taxonomy-only columns (in taxonomy but not features/schema)
@@ -790,7 +796,6 @@ def _parse_yaml_to_wizard_state(config_path: Path) -> dict:
                     if col not in col_configs:
                         col_configs[col] = {
                             "type": "",
-                            "separator": "|",
                             "schema": cat,
                         }
 
@@ -939,13 +944,19 @@ def _build_yaml_config(data: dict) -> str:
             continue
 
         features: OrderedDict = OrderedDict()
-        for yaml_type in ("object", "float", "text", "datetime", "misc", "exclude"):
+        for yaml_type in ("object", "float", "string", "datetime", "bool", "misc", "exclude"):
             features[yaml_type] = []
 
         for tab_key in role_tabs:
             for col_name, cfg in column_configs[tab_key].items():
                 cat = cfg.get("schema", "")
                 col_type = cfg.get("type", "")
+
+                # Columns with schema "exclude" go into the exclude feature type
+                if cat == "exclude":
+                    if col_name not in features["exclude"]:
+                        features["exclude"].append(col_name)
+                    continue
 
                 if not col_type:
                     continue
